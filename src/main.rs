@@ -1,81 +1,145 @@
-extern crate winapi;
-use std::io::{Error, ErrorKind};
-use std::iter::once;
-#[allow(unused_imports)] use log::error;
+#[allow(unused_imports)]
+use log::{error, warn, Level, Metadata, Record};
+use std::{ffi::OsString, os::windows::prelude::OsStringExt};
+use windows_bindings::Windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::Threading::{OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_VM_WRITE}};
 
-fn enumerate_processes() -> Result<Vec<u32>, Error> {
-    use std::mem::size_of;
-    use winapi::um::psapi::EnumProcesses;
-    use winapi::shared::minwindef::DWORD;
-    
-    let mut a_processes: [DWORD; 1024] = [0; 1024];
-    let mut cb_needed: DWORD = 0;
+struct Handle(HANDLE);
+
+impl Handle {
+    fn new(pid: u32, desired_access: PROCESS_ACCESS_RIGHTS) -> Handle {
+        unsafe {
+            return Handle (
+                OpenProcess(desired_access, false, pid),
+            );
+        }
+    }
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
+fn process_ids() -> Vec<u32> {
+    use std::mem::{size_of, size_of_val};
+    use windows_bindings::Windows::Win32::System::ProcessStatus::K32EnumProcesses;
+
+    let mut process_ids: [u32; 1024] = [0; 1024];
+    let mut cb_needed: u32 = 0;
 
     unsafe {
-        if EnumProcesses(&mut a_processes[0] as *mut DWORD, (1024 * size_of::<DWORD>()) as u32, &mut cb_needed) == 0 {
+        if !K32EnumProcesses(
+            &mut process_ids[0],
+            size_of_val(&process_ids) as u32,
+            &mut cb_needed,
+        )
+        .as_bool()
+        {
             error!("EnumProcesses failed");
-            return Err(Error::new(ErrorKind::Other, "EnumProcesses failed"));
+            return Vec::new();
         }
     }
 
-    let len: usize = cb_needed as usize / size_of::<DWORD>();
+    let len: usize = cb_needed as usize / size_of::<u32>();
 
-    Ok(a_processes[..len].iter().filter(|&&pid| pid != 0).cloned().collect())
+    return process_ids[..len]
+        .iter()
+        .filter(|&&pid| pid != 0)
+        .cloned()
+        .collect();
 }
 
-fn entry() -> Result<i32, Error> {
-    use std::mem::size_of;
-    use std::ptr::null_mut;
-
-    use winapi::um::psapi::{EnumProcessModules, GetModuleBaseNameA};
-    use winapi::um::processthreadsapi::OpenProcess;
-    use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, CHAR};
-    use winapi::shared::minwindef::{DWORD, FALSE, HMODULE, MAX_PATH};
-
-    match enumerate_processes() {
-        Ok(process_ids) => {
-            let mut processes: Vec<(u32, String)> = Vec::new();
-
-            for process_id in process_ids {
-                unsafe {
-                    let h_process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, process_id);
-
-                    if !h_process.is_null() {
-                        let mut h_mod: HMODULE = null_mut();
-                        let mut cb_needed: DWORD = 0;
-
-                        if EnumProcessModules(h_process, &mut h_mod, size_of::<HMODULE>() as u32, &mut cb_needed) != 0 {
-                            let mut process_name: [CHAR; MAX_PATH] = [0; MAX_PATH];
-
-                            if GetModuleBaseNameA(h_process, h_mod, &mut process_name[0], process_name.len() as u32) != 0 {
-                                let process_name: String = process_name.iter().filter(|&&c| c != 0).chain(once(&0)).map(|&c| c as u8 as char).collect();
-                                processes.push((process_id, process_name));
-                            } else {
-                                error!("Could not get process name of {}",  process_id);
-                            }
-                        }
-                    }
-                }
-            }
-
-            processes.sort_by(|a, b| a.0.cmp(&b.0));
-
-            for (pid, name) in processes {
-                println!("{}\t{}", pid, name);
-            }
-
-            Ok(0)
+fn process_name(pid: u32) -> Option<OsString> {
+    use std::mem::size_of_val;
+    use windows_bindings::{
+        Windows::Win32::Foundation::{HINSTANCE, MAX_PATH, PWSTR},
+        Windows::Win32::System::ProcessStatus::{
+            K32EnumProcessModulesEx, K32GetModuleBaseNameW, LIST_MODULES_ALL,
         },
-        Err(err) => Err(err),
+        Windows::Win32::System::Threading::{
+            PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+        },
+    };
+
+    let h_process = Handle::new(pid, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE);
+
+    if h_process.0.is_null() {
+        warn!("Could not OpenProcess on {}", pid);
+        return None;
+    } else {
+        let mut h_mod: HINSTANCE = HINSTANCE(0);
+        let mut cb_needed: u32 = 0;
+        unsafe {
+            if !K32EnumProcessModulesEx(
+                h_process.0,
+                &mut h_mod,
+                size_of_val(&h_mod) as u32,
+                &mut cb_needed,
+                LIST_MODULES_ALL,
+            )
+            .as_bool()
+            {
+                warn!("Could not K32EnumProcessModulesEx on {}", pid);
+                return None;
+            } else {
+                let mut name: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+                K32GetModuleBaseNameW(
+                    h_process.0,
+                    h_mod,
+                    PWSTR(&mut name[0]),
+                    size_of_val(&name) as u32,
+                );
+
+                return Some(OsString::from_wide(&name[..]));
+            }
+        }
     }
 }
 
- fn main() -> Result<(), Error> {
-    match entry() {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            error!("{}", err);
-            Err(err)
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            println!("{} - {}", record.level(), record.args());
         }
+    }
+
+    fn flush(&self) {}
+}
+
+use log::{LevelFilter, SetLoggerError};
+
+static LOGGER: SimpleLogger = SimpleLogger;
+
+pub fn init_log() -> Result<(), SetLoggerError> {
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Error))
+}
+
+fn main() {
+    init_log().expect("could not initialize log");
+
+    let mut processes: Vec<(u32, String)> = process_ids()
+        .iter()
+        .map(|&pid|  (
+            pid,
+                match process_name(pid) {
+                    Some(name) => name.to_string_lossy().to_string(),
+                    None => String::from(format!("<PROCESS ID: {}>", pid)),
+                }
+        ))
+        .collect();
+    processes.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+    let processes = processes;
+
+    for ( id, name ) in processes {
+        println!("{}\t{}", id, name);
     }
 }
