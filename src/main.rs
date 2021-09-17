@@ -1,19 +1,29 @@
-#[allow(unused_imports)]
-use log::{error, warn, Level, Metadata, Record};
-use std::{ffi::OsString, os::windows::prelude::OsStringExt};
-use windows_bindings::Windows::Win32::{Foundation::{CloseHandle, HANDLE}, System::Threading::{OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_VM_WRITE}};
+use core::{panic, time};
+use std::{
+    ffi::{c_void, OsString},
+    fmt,
+    io::{self, Write},
+    mem::size_of,
+    ops::Range,
+    os::windows::prelude::OsStringExt,
+    ptr::null_mut,
+    thread,
+};
+
+use log::{Level, LevelFilter, Metadata, Record, SetLoggerError};
+use windows_bindings::Windows::Win32::{
+    Foundation::{CloseHandle, HANDLE, HINSTANCE, INVALID_HANDLE_VALUE},
+    System::{Diagnostics::Debug::ReadProcessMemory, Threading::PROCESS_VM_READ},
+    System::{
+        Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Module32FirstW, MODULEENTRY32W, TH32CS_SNAPMODULE,
+            TH32CS_SNAPMODULE32,
+        },
+        Threading::{OpenProcess, PROCESS_ACCESS_RIGHTS},
+    },
+};
 
 struct Handle(HANDLE);
-
-impl Handle {
-    fn new(pid: u32, desired_access: PROCESS_ACCESS_RIGHTS) -> Handle {
-        unsafe {
-            return Handle (
-                OpenProcess(desired_access, false, pid),
-            );
-        }
-    }
-}
 
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -23,79 +33,117 @@ impl Drop for Handle {
     }
 }
 
-fn process_ids() -> Vec<u32> {
-    use std::mem::{size_of, size_of_val};
-    use windows_bindings::Windows::Win32::System::ProcessStatus::K32EnumProcesses;
+impl fmt::Display for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
-    let mut process_ids: [u32; 1024] = [0; 1024];
-    let mut cb_needed: u32 = 0;
+struct ModuleEntry {
+    _module_id: u32,
+    _process_id: u32,
+    _glblcnt_usage: u32,
+    _proccnt_usage: u32,
+    mod_base_addr: *mut u8,
+    _mod_base_size: u32,
+    _h_module: HINSTANCE,
+    _module_name: String,
+    _exe_path: String,
+}
 
-    unsafe {
-        if !K32EnumProcesses(
-            &mut process_ids[0],
-            size_of_val(&process_ids) as u32,
-            &mut cb_needed,
-        )
-        .as_bool()
-        {
-            error!("EnumProcesses failed");
-            return Vec::new();
+impl ModuleEntry {
+    pub fn from(&module_entry: &MODULEENTRY32W) -> Self {
+        return Self {
+            _module_id: module_entry.th32ModuleID,
+            _process_id: module_entry.th32ProcessID,
+            _glblcnt_usage: module_entry.GlblcntUsage,
+            _proccnt_usage: module_entry.ProccntUsage,
+            mod_base_addr: module_entry.modBaseAddr,
+            _mod_base_size: module_entry.modBaseSize,
+            _h_module: module_entry.hModule,
+            _module_name: OsString::from_wide(&module_entry.szModule[..])
+                .to_string_lossy()
+                .trim_end_matches(char::from(0))
+                .to_string(),
+            _exe_path: OsString::from_wide(&module_entry.szExePath[..])
+                .to_string_lossy()
+                .trim_end_matches(char::from(0))
+                .to_string(),
+        };
+    }
+}
+
+struct Process {
+    handle: Handle,
+    module: ModuleEntry,
+}
+
+impl Process {
+    pub fn new(pid: u32, desired_access: PROCESS_ACCESS_RIGHTS) -> Self {
+        let handle: Handle;
+        unsafe {
+            handle = Handle(OpenProcess(desired_access, false, pid));
+        }
+
+        let module: ModuleEntry;
+
+        unsafe {
+            let h_snapshot = Handle(CreateToolhelp32Snapshot(
+                TH32CS_SNAPMODULE32 | TH32CS_SNAPMODULE,
+                pid,
+            ));
+            if h_snapshot.0 == INVALID_HANDLE_VALUE {
+                panic!("CreateToolhelp32Snapshot failed");
+            }
+
+            let mut module_entry = MODULEENTRY32W {
+                dwSize: size_of::<MODULEENTRY32W>() as u32,
+                th32ProcessID: 0,
+                th32ModuleID: 0,
+                GlblcntUsage: 0,
+                ProccntUsage: 0,
+                modBaseAddr: null_mut(),
+                modBaseSize: 0,
+                hModule: HINSTANCE(0),
+                szModule: [0u16; 256],
+                szExePath: [0u16; 260],
+            };
+
+            if Module32FirstW(h_snapshot.0, &mut module_entry).as_bool() {
+                module = ModuleEntry::from(&module_entry);
+            } else {
+                panic!("Module32FirstW failed");
+            }
+        }
+
+        Self {
+            handle: handle,
+            module: module,
         }
     }
 
-    let len: usize = cb_needed as usize / size_of::<u32>();
+    fn read_process_memory(&self, range: Range<usize>) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.resize(range.len(), 0);
 
-    return process_ids[..len]
-        .iter()
-        .filter(|&&pid| pid != 0)
-        .cloned()
-        .collect();
-}
-
-fn process_name(pid: u32) -> Option<OsString> {
-    use std::mem::size_of_val;
-    use windows_bindings::{
-        Windows::Win32::Foundation::{HINSTANCE, MAX_PATH, PWSTR},
-        Windows::Win32::System::ProcessStatus::{
-            K32EnumProcessModulesEx, K32GetModuleBaseNameW, LIST_MODULES_ALL,
-        },
-        Windows::Win32::System::Threading::{
-            PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
-        },
-    };
-
-    let h_process = Handle::new(pid, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE);
-
-    if h_process.0.is_null() {
-        warn!("Could not OpenProcess on {}", pid);
-        return None;
-    } else {
-        let mut h_mod: HINSTANCE = HINSTANCE(0);
-        let mut cb_needed: u32 = 0;
         unsafe {
-            if !K32EnumProcessModulesEx(
-                h_process.0,
-                &mut h_mod,
-                size_of_val(&h_mod) as u32,
-                &mut cb_needed,
-                LIST_MODULES_ALL,
+            if !ReadProcessMemory(
+                self.handle.0,
+                (self.module.mod_base_addr as usize + range.start) as *const c_void,
+                buffer.as_mut_ptr() as *mut c_void,
+                buffer.len(),
+                null_mut() as *mut usize,
             )
             .as_bool()
             {
-                warn!("Could not K32EnumProcessModulesEx on {}", pid);
-                return None;
-            } else {
-                let mut name: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-                K32GetModuleBaseNameW(
-                    h_process.0,
-                    h_mod,
-                    PWSTR(&mut name[0]),
-                    size_of_val(&name) as u32,
+                panic!(
+                    "ReadProcessMemory failed to read between the range {:?}",
+                    range
                 );
-
-                return Some(OsString::from_wide(&name[..]));
             }
         }
+
+        return buffer;
     }
 }
 
@@ -115,8 +163,6 @@ impl log::Log for SimpleLogger {
     fn flush(&self) {}
 }
 
-use log::{LevelFilter, SetLoggerError};
-
 static LOGGER: SimpleLogger = SimpleLogger;
 
 pub fn init_log() -> Result<(), SetLoggerError> {
@@ -126,20 +172,21 @@ pub fn init_log() -> Result<(), SetLoggerError> {
 fn main() {
     init_log().expect("could not initialize log");
 
-    let mut processes: Vec<(u32, String)> = process_ids()
-        .iter()
-        .map(|&pid|  (
-            pid,
-                match process_name(pid) {
-                    Some(name) => name.to_string_lossy().to_string(),
-                    None => String::from(format!("<PROCESS ID: {}>", pid)),
-                }
-        ))
-        .collect();
-    processes.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
-    let processes = processes;
+    print!("Enter Process ID: ");
+    io::stdout().flush().unwrap();
 
-    for ( id, name ) in processes {
-        println!("{}\t{}", id, name);
+    let mut pid = String::new();
+    io::stdin().read_line(&mut pid).unwrap();
+    let pid: u32 = pid.trim().parse().unwrap();
+
+    let process = Process::new(pid, PROCESS_VM_READ);
+
+    let mut bytes = [0u8; 4];
+    loop {
+        thread::sleep(time::Duration::new(1, 0));
+        let data = process.read_process_memory(0x0009E6CC..(0x0009E6CC + 4));
+        bytes.copy_from_slice(&data[0..4]);
+        let health = u32::from_le_bytes(bytes);
+        println!("{}", health);
     }
 }
