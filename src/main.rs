@@ -215,9 +215,8 @@ impl Process {
         }
     }
 
-    pub fn read_process_memory(&self, range: Range<usize>) -> Vec<u8> {
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.resize(buffer.capacity(), 0);
+    pub fn read_process_memory(&self, range: Range<usize>) -> Box<[u8]> {
+        let mut buffer = vec![0u8; range.len()].into_boxed_slice();
 
         self.read_process_memory_into_buffer(range.start, &mut buffer[..]);
 
@@ -273,8 +272,7 @@ fn main() {
 
     let process = Process::new(pid, PROCESS_VM_READ);
 
-    let mut buffer: Vec<u8> = Vec::with_capacity(process.module.modBaseSize as usize);
-    buffer.resize(buffer.capacity(), 0);
+    let mut buffer = vec![0u8; process.module.modBaseSize as usize].into_boxed_slice();
 
     let mut bytes = [0u8; 4];
     loop {
