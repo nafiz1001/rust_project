@@ -179,13 +179,13 @@ impl Iterator for ModuleEnumerator {
     }
 }
 
-struct Process {
+pub struct Process {
     handle: Handle,
     module: MODULEENTRY32W,
 }
 
 impl Process {
-    fn new(pid: u32, desired_access: PROCESS_ACCESS_RIGHTS) -> Self {
+    pub fn new(pid: u32, desired_access: PROCESS_ACCESS_RIGHTS) -> Self {
         let handle: Handle;
         unsafe {
             handle = Handle(OpenProcess(desired_access, false, pid));
@@ -196,14 +196,11 @@ impl Process {
         Self { handle, module }
     }
 
-    fn read_process_memory(&self, range: Range<usize>) -> Vec<u8> {
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.resize(range.len(), 0);
-
+    pub fn read_process_memory_into_buffer(&self, start: usize, buffer: &mut [u8]) {
         unsafe {
             if !ReadProcessMemory(
                 self.handle.0,
-                (self.module.modBaseAddr as usize + range.start) as *const c_void,
+                (self.module.modBaseAddr as usize + start) as *const c_void,
                 buffer.as_mut_ptr() as *mut c_void,
                 buffer.len(),
                 null_mut() as *mut usize,
@@ -211,11 +208,17 @@ impl Process {
             .as_bool()
             {
                 panic!(
-                    "ReadProcessMemory failed to read between the range {:?}",
-                    range
+                    "ReadProcessMemory failed to read between the range {:?}", start..(start + buffer.len())
                 );
             }
         }
+    }
+
+    pub fn read_process_memory(&self, range: Range<usize>) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.resize(buffer.capacity(), 0);
+
+        self.read_process_memory_into_buffer(range.start, &mut buffer[..]);
 
         return buffer;
     }
@@ -267,11 +270,14 @@ fn main() {
 
     let process = Process::new(pid, PROCESS_VM_READ);
 
+    let mut buffer: Vec<u8> = Vec::with_capacity(process.module.modBaseSize as usize);
+    buffer.resize(buffer.capacity(), 0);
+
     let mut bytes = [0u8; 4];
     loop {
         thread::sleep(time::Duration::new(1, 0));
-        let data = process.read_process_memory(0x0009E6CC..(0x0009E6CC + 4));
-        bytes.copy_from_slice(&data[0..4]);
+        process.read_process_memory_into_buffer(0, &mut buffer[..]);
+        bytes.copy_from_slice(&buffer[0x0009E6CC..(0x0009E6CC + 4)]);
         let health = u32::from_le_bytes(bytes);
         println!("{}", health);
     }
