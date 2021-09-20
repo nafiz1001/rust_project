@@ -208,7 +208,8 @@ impl Process {
             .as_bool()
             {
                 panic!(
-                    "ReadProcessMemory failed to read between the range {:?}", start..(start + buffer.len())
+                    "ReadProcessMemory failed to read between the range {:?}",
+                    start..(start + buffer.len())
                 );
             }
         }
@@ -249,16 +250,18 @@ pub fn init_log() -> Result<(), SetLoggerError> {
 fn main() {
     init_log().expect("could not initialize log");
 
-    let mut processes: Vec<_> = ProcessEnumerator::new().map(|entry| (entry.th32ProcessID, wide_chars_to_string(&entry.szExeFile[..]))).collect();
-    processes
-        .sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    let mut processes: Vec<_> = ProcessEnumerator::new()
+        .map(|entry| {
+            (
+                entry.th32ProcessID,
+                wide_chars_to_string(&entry.szExeFile[..]),
+            )
+        })
+        .collect();
+    processes.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
 
     for (pid, name) in processes {
-        println!(
-            "{}\t{}",
-            pid,
-            name,
-        );
+        println!("{}\t{}", pid, name,);
     }
 
     print!("Enter Process ID: ");
