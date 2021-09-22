@@ -6,7 +6,6 @@ use std::{
     fmt,
     io::{self, Write},
     mem::size_of,
-    ops::Range,
     os::windows::prelude::OsStringExt,
     ptr::null_mut,
     thread,
@@ -196,31 +195,23 @@ impl Process {
         Self { handle, module }
     }
 
-    pub fn read_process_memory_into_buffer(&self, start: usize, buffer: &mut [u8]) {
+    pub fn read_process_memory<T>(&self, relative_start: usize, buffer: &mut [T]) {
         unsafe {
             if !ReadProcessMemory(
                 self.handle.0,
-                (self.module.modBaseAddr as usize + start) as *const c_void,
+                (self.module.modBaseAddr as usize + relative_start) as *const c_void,
                 buffer.as_mut_ptr() as *mut c_void,
-                buffer.len(),
+                buffer.len() * size_of::<T>(),
                 null_mut() as *mut usize,
             )
             .as_bool()
             {
                 panic!(
                     "ReadProcessMemory failed to read between the range {:?}",
-                    start..(start + buffer.len())
+                    relative_start..(relative_start + buffer.len())
                 );
             }
         }
-    }
-
-    pub fn read_process_memory(&self, range: Range<usize>) -> Box<[u8]> {
-        let mut buffer = vec![0u8; range.len()].into_boxed_slice();
-
-        self.read_process_memory_into_buffer(range.start, &mut buffer[..]);
-
-        return buffer;
     }
 }
 
@@ -277,7 +268,7 @@ fn main() {
     let mut bytes = [0u8; 4];
     loop {
         thread::sleep(time::Duration::new(1, 0));
-        process.read_process_memory_into_buffer(0, &mut buffer[..]);
+        process.read_process_memory(0, &mut buffer[..]);
         bytes.copy_from_slice(&buffer[0x0009E6CC..(0x0009E6CC + 4)]);
         let health = u32::from_le_bytes(bytes);
         println!("{}", health);
