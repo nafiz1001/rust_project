@@ -36,6 +36,10 @@ impl Handle {
             CloseHandle(self.0);
         }
     }
+
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE_VALUE
+    }
 }
 
 impl Drop for Handle {
@@ -66,7 +70,7 @@ impl ProcessEnumerator {
     fn new() -> Self {
         unsafe {
             let handle = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
-            if handle.0 == INVALID_HANDLE_VALUE {
+            if handle.is_invalid() {
                 panic!("CreateToolhelp32Snapshot failed");
             } else {
                 return Self {
@@ -128,7 +132,7 @@ impl ModuleEnumerator {
                 TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
                 pid,
             ));
-            if handle.0 == INVALID_HANDLE_VALUE {
+            if handle.is_invalid() {
                 panic!("CreateToolhelp32Snapshot failed");
             } else {
                 return Self {
