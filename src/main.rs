@@ -1,14 +1,16 @@
 #![allow(non_snake_case)]
 
-use core::{panic, time};
+use core::panic;
 use std::{
+    collections::HashMap,
     ffi::{c_void, OsString},
     fmt,
-    io::{self, Write},
+    fs::File,
+    io::{self, LineWriter, Write},
     mem::size_of,
     os::windows::prelude::OsStringExt,
+    path::Path,
     ptr::null_mut,
-    thread,
 };
 
 use log::{Level, LevelFilter, Metadata, Record, SetLoggerError};
@@ -252,7 +254,7 @@ fn main() {
             )
         })
         .collect();
-    processes.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    processes.sort_by(|(_, a), (_, b)| a.to_lowercase().cmp(&b.to_lowercase()));
 
     for (pid, name) in processes {
         println!("{}\t{}", pid, name,);
@@ -266,15 +268,46 @@ fn main() {
     let pid: u32 = pid.trim().parse().unwrap();
 
     let process = Process::new(pid, PROCESS_VM_READ);
-
     let mut buffer = vec![0u8; process.module.modBaseSize as usize].into_boxed_slice();
 
     let mut bytes = [0u8; 4];
+
+    let mut matches = HashMap::<usize, u32>::new();
+
+    for k in 0..(buffer.len() - 4) {
+        bytes.copy_from_slice(&buffer[k..k + 4]);
+        let v = u32::from_le_bytes(bytes);
+
+        matches.insert(k, v);
+    }
+
     loop {
-        thread::sleep(time::Duration::new(1, 0));
-        process.read_process_memory(0, &mut buffer[..]);
-        bytes.copy_from_slice(&buffer[0x0009E6CC..(0x0009E6CC + 4)]);
-        let health = u32::from_le_bytes(bytes);
-        println!("{}", health);
+        let mut expected = String::new();
+        io::stdin().read_line(&mut expected).unwrap();
+        let expected: u32 = expected.trim().parse().unwrap();
+
+        process.read_process_memory(0, &mut buffer);
+
+        for k in 0..(buffer.len() - 4) {
+            bytes.copy_from_slice(&buffer[k..k + 4]);
+            let v = u32::from_le_bytes(bytes);
+
+            if v != expected {
+                matches.remove(&k);
+            } else {
+                if matches.contains_key(&k) {
+                    matches.insert(k, v);
+                }
+            }
+        }
+
+        println!("{} remaining results", matches.len());
+
+        let mut file = LineWriter::new(File::create(Path::new("scan.txt")).unwrap());
+        for (k, v) in matches.iter() {
+            file.write_all(format!("{:#08x}\t{}", k, v).as_bytes())
+                .unwrap();
+            file.write_all(b"\n").unwrap();
+        }
     }
 }
