@@ -214,6 +214,14 @@ impl Process {
         Self { handle, module }
     }
 
+    pub fn id(&self) -> u32 {
+        self.module.th32ProcessID
+    }
+
+    pub fn name(&self) -> String {
+        wide_chars_to_string(&self.module.szModule)
+    }
+
     pub fn memory_len(&self) -> usize {
         return self.module.modBaseSize as usize;
     }
