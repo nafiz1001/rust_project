@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
 use std::{
-    collections::HashMap,
     fs::File,
     io::{self, LineWriter, Write},
+    mem::size_of,
     path::Path,
 };
 
@@ -52,18 +52,9 @@ fn main() {
     let pid: u32 = pid.trim().parse().unwrap();
 
     let process = Process::new(pid);
+
     let mut buffer = vec![0u8; process.memory_len()].into_boxed_slice();
-
-    let mut bytes = [0u8; 4];
-
-    let mut matches = HashMap::<usize, u32>::new();
-
-    for k in 0..(buffer.len() - 4) {
-        bytes.copy_from_slice(&buffer[k..k + 4]);
-        let v = u32::from_le_bytes(bytes);
-
-        matches.insert(k, v);
-    }
+    let mut results: Vec<usize> = (0..(buffer.len() - size_of::<u32>())).collect();
 
     loop {
         let mut expected = String::new();
@@ -71,25 +62,20 @@ fn main() {
         let expected: u32 = expected.trim().parse().unwrap();
 
         process.read_process_memory(0, &mut buffer);
+        results.retain(|&addr| {
+            let mut actual = [0u8; size_of::<u32>()];
+            actual.copy_from_slice(&buffer[addr..addr + size_of::<u32>()]);
 
-        for k in 0..(buffer.len() - 4) {
-            bytes.copy_from_slice(&buffer[k..k + 4]);
-            let v = u32::from_le_bytes(bytes);
+            let expected = expected.to_le_bytes();
 
-            if v != expected {
-                matches.remove(&k);
-            } else {
-                if matches.contains_key(&k) {
-                    matches.insert(k, v);
-                }
-            }
-        }
+            actual == expected
+        });
 
-        println!("{} remaining results", matches.len());
+        println!("{} remaining results", results.len());
 
         let mut file = LineWriter::new(File::create(Path::new("scan.txt")).unwrap());
-        for (k, v) in matches.iter() {
-            file.write_all(format!("{:#08x}\t{}", k, v).as_bytes())
+        for k in &results {
+            file.write_all(format!("{:#08x}\t{}", k, expected).as_bytes())
                 .unwrap();
             file.write_all(b"\n").unwrap();
         }
