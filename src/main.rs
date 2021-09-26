@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 use std::{
     fs::File,
     io::{self, LineWriter, Write},
