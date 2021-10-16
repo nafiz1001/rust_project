@@ -13,7 +13,7 @@ use std::{
 
 use crate::Windows::Win32::{
     Foundation::{CloseHandle, HANDLE, HINSTANCE, MAX_PATH},
-    System::Diagnostics::{Debug::ReadProcessMemory, ToolHelp::PROCESSENTRY32W},
+    System::Diagnostics::{Debug::{ReadProcessMemory, WriteProcessMemory}, ToolHelp::PROCESSENTRY32W},
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW,
@@ -226,6 +226,26 @@ impl Process {
             }
         }
     }
+
+    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) {
+        unsafe {
+            if !WriteProcessMemory(
+                self.handle,
+                start as *mut c_void,
+                buffer.as_ptr() as *const c_void,
+                buffer.len() * size_of::<T>(),
+                null_mut() as *mut usize,
+            )
+            .as_bool()
+            {
+                panic!(
+                    "WriteProcessMemory failed to write between the range {:#016x}..{:#016x}",
+                    start,
+                    (start + buffer.len())
+                );
+            }
+        }
+    }
 }
 
 impl Drop for Process {
@@ -364,5 +384,15 @@ mod tests {
                 .count()
                 > 0
         );
+    }
+
+    #[test]
+    fn write_process_memory() {
+        let entry = ProcessIterator::new()
+            .find(|proc| proc.name() == "Doukutsu.exe")
+            .expect("failed to find Doukutsu.exe");
+        let process = Process::new(entry.id());
+
+        process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]);
     }
 }
