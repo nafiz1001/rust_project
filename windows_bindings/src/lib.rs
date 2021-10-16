@@ -24,7 +24,6 @@ use crate::Windows::Win32::{
             VirtualQueryEx, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_PROTECTION_FLAGS,
             PAGE_READONLY, PAGE_READWRITE, PAGE_TYPE, VIRTUAL_ALLOCATION_TYPE,
         },
-        SystemInformation::{GetSystemInfo, SYSTEM_INFO, SYSTEM_INFO_0},
         Threading::{
             OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ,
             PROCESS_VM_WRITE,
@@ -237,42 +236,23 @@ impl Drop for Process {
     }
 }
 
-pub enum PagePermission {
+pub enum MemoryPermission {
     READONLY,
     READWRITE,
 }
 
-pub struct PageEntry {
+pub struct MemoryRegionEntry {
     pub range: Range<usize>,
-    pub permission: PagePermission,
+    pub permission: MemoryPermission,
 }
 
-pub struct PageIterator<'a> {
+pub struct MemoryRegionIterator<'a> {
     memory_basic_information: MEMORY_BASIC_INFORMATION,
     process: &'a Process,
-    current_address: *mut c_void,
-    page_size: usize,
 }
 
-impl<'a> PageIterator<'a> {
+impl<'a> MemoryRegionIterator<'a> {
     pub fn new(process: &'a Process, starting_address: usize) -> Self {
-        let mut system_info = SYSTEM_INFO {
-            Anonymous: SYSTEM_INFO_0 { dwOemId: 0 },
-            dwPageSize: 0,
-            lpMinimumApplicationAddress: null_mut() as *mut c_void,
-            lpMaximumApplicationAddress: null_mut() as *mut c_void,
-            dwActiveProcessorMask: 0,
-            dwNumberOfProcessors: 0,
-            dwProcessorType: 0,
-            dwAllocationGranularity: 0,
-            wProcessorLevel: 0,
-            wProcessorRevision: 0,
-        };
-
-        unsafe {
-            GetSystemInfo(&mut system_info as *mut SYSTEM_INFO);
-        }
-
         return Self {
             process,
             memory_basic_information: MEMORY_BASIC_INFORMATION {
@@ -285,78 +265,49 @@ impl<'a> PageIterator<'a> {
                 Protect: PAGE_PROTECTION_FLAGS(0),
                 Type: PAGE_TYPE(0),
             },
-            current_address: null_mut(),
-            page_size: system_info.dwPageSize as usize,
         };
     }
 }
 
-impl Iterator for PageIterator<'_> {
-    type Item = PageEntry;
+impl Iterator for MemoryRegionIterator<'_> {
+    type Item = MemoryRegionEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
             loop {
-                if self.current_address.is_null() {
-                    if VirtualQueryEx(
-                        self.process.handle,
-                        self.memory_basic_information.BaseAddress,
-                        &mut self.memory_basic_information as *mut MEMORY_BASIC_INFORMATION,
-                        size_of::<MEMORY_BASIC_INFORMATION>(),
-                    ) <= 0
-                    {
-                        return None;
-                    }
-
-                    self.current_address = self.memory_basic_information.BaseAddress;
-                }
-
-                if self
-                    .current_address
-                    .offset_from(self.memory_basic_information.BaseAddress)
-                    >= self.memory_basic_information.RegionSize as isize
+                if VirtualQueryEx(
+                    self.process.handle,
+                    self.memory_basic_information.BaseAddress,
+                    &mut self.memory_basic_information as *mut MEMORY_BASIC_INFORMATION,
+                    size_of::<MEMORY_BASIC_INFORMATION>(),
+                ) <= 0
                 {
-                    if VirtualQueryEx(
-                        self.process.handle,
-                        self.current_address,
-                        &mut self.memory_basic_information as *mut MEMORY_BASIC_INFORMATION,
-                        size_of::<MEMORY_BASIC_INFORMATION>(),
-                    ) <= 0
-                    {
-                        return None;
-                    }
+                    return None;
+                } else {
+                    let MEMORY_BASIC_INFORMATION {
+                        BaseAddress,
+                        RegionSize,
+                        State,
+                        Protect,
+                        ..
+                    } = self.memory_basic_information;
 
-                    self.current_address = self.memory_basic_information.BaseAddress;
+                    self.memory_basic_information.BaseAddress =
+                        BaseAddress.offset(RegionSize as isize);
+
+                    let range = BaseAddress as usize..BaseAddress as usize + RegionSize;
+                    return Some(match State {
+                        MEM_COMMIT => MemoryRegionEntry {
+                            range,
+                            permission: match Protect {
+                                PAGE_READONLY => MemoryPermission::READONLY,
+                                PAGE_READWRITE => MemoryPermission::READWRITE,
+                                _ => continue,
+                            },
+                        },
+                        _ => continue,
+                    });
                 }
-
-                let page_entry = PageEntry {
-                    range: self.current_address as usize
-                        ..self.current_address as usize + self.page_size as usize,
-                    permission: match self.memory_basic_information {
-                        MEMORY_BASIC_INFORMATION {
-                            State: MEM_COMMIT,
-                            Protect: PAGE_READONLY,
-                            ..
-                        } => PagePermission::READONLY,
-                        MEMORY_BASIC_INFORMATION {
-                            State: MEM_COMMIT,
-                            Protect: PAGE_READWRITE,
-                            ..
-                        } => PagePermission::READWRITE,
-                        MEMORY_BASIC_INFORMATION {
-                            BaseAddress,
-                            RegionSize,
-                            ..
-                        } => {
-                            self.current_address = BaseAddress.offset(RegionSize as isize);
-                            continue;
-                        }
-                    },
-                };
-
-                self.current_address = self.current_address.offset(self.page_size as isize);
-
-                return Some(page_entry);
             }
         }
     }
@@ -364,7 +315,7 @@ impl Iterator for PageIterator<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{PageIterator, Process, ProcessIterator};
+    use crate::{MemoryRegionIterator, Process, ProcessIterator};
 
     #[test]
     fn enumerate_processes() {
@@ -391,15 +342,8 @@ mod tests {
         let process = Process::new(entry.id());
         let module = process.module();
 
-        let pages = PageIterator::new(&process, module.modBaseAddr as usize);
-        assert!(
-            pages
-                .take_while(
-                    |p| (p.range.end - module.modBaseAddr as usize) < module.modBaseSize as usize
-                )
-                .count()
-                > 0
-        );
+        let regions = MemoryRegionIterator::new(&process, module.modBaseAddr as usize);
+        assert!(regions.count() > 0);
     }
 
     #[test]
@@ -408,20 +352,17 @@ mod tests {
             .find(|proc| proc.name() == "Doukutsu.exe")
             .expect("failed to find Doukutsu.exe");
         let process = Process::new(entry.id());
-        let module = process.module();
-        let pages = PageIterator::new(&process, process.module().modBaseAddr as usize);
+        let regions = MemoryRegionIterator::new(&process, 0usize);
 
-        let mut count = 0;
-        for page in pages {
-            if (page.range.clone().end - module.modBaseAddr as usize) >= module.modBaseSize as usize
-            {
-                break;
-            }
-
-            let mut buffer = vec![0u8; page.range.len()];
-            process.read_process_memory(page.range.start, &mut buffer);
-            count = count + 1;
-        }
-        assert!(count > 0)
+        assert!(
+            regions
+                .map(|r| {
+                    let mut buffer = vec![0u8; r.range.len()];
+                    process.read_process_memory(r.range.start, &mut buffer);
+                    return 1;
+                })
+                .count()
+                > 0
+        );
     }
 }
