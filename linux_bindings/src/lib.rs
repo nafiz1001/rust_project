@@ -147,9 +147,11 @@ mod tests {
     fn memory_region_iterator() {
         let mut child = create_child();
 
+        //ptrace::attach(Pid::from_raw(child.id() as i32)).unwrap();
         for region in MemoryRegionIterator::new(&Process::new(child.id())) {
             println!("{:?}", region);
         }
+        //ptrace::detach(Pid::from_raw(child.id() as i32), Signal::SIGCONT).unwrap();
 
         child.kill().unwrap();
     }
