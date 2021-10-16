@@ -109,9 +109,17 @@ impl Iterator for MemoryRegionIterator {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::process::{Child, Command, Stdio};
 
     use crate::{MemoryRegionIterator, Process, ProcessIterator};
+
+    fn create_child() -> Child {
+        Command::new("/usr/games/moon-buggy")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to execute child")
+    }
 
     #[test]
     fn enumerate_processes() {
@@ -128,9 +136,7 @@ mod tests {
 
     #[test]
     fn new_process() {
-        let mut child = Command::new("/usr/games/moon-buggy")
-            .spawn()
-            .expect("failed to execute child");
+        let mut child = create_child();
 
         Process::new(child.id());
 
@@ -139,9 +145,7 @@ mod tests {
 
     #[test]
     fn memory_region_iterator() {
-        let mut child = Command::new("/usr/games/moon-buggy")
-            .spawn()
-            .expect("failed to execute child");
+        let mut child = create_child();
 
         for region in MemoryRegionIterator::new(&Process::new(child.id())) {
             println!("{:?}", region);
