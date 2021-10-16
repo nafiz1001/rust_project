@@ -22,7 +22,7 @@ impl Process {
     pub fn name(&self) -> String {
         fs::read_to_string(self.path.join("comm"))
             .unwrap()
-            .trim_end()
+            .trim()
             .to_owned()
     }
 }
@@ -44,10 +44,20 @@ impl Iterator for ProcessIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.dirs
-            .find_map(|dir| {
-                dir.ok()
-                    .and_then(|dir| dir.file_name().to_string_lossy().parse::<u32>().ok())
-            })
+            .find_map(|dir| dir.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
             .and_then(|pid| Some(Process::new(pid)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ProcessIterator;
+
+    #[test]
+    fn enumerate_processes() {
+        assert!(ProcessIterator::new().map(|p| {
+            println!("{:?}", p);
+            return p
+        }).count() > 0);
     }
 }
