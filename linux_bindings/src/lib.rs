@@ -55,6 +55,7 @@ impl Iterator for ProcessIterator {
 pub enum MemoryPermission {
     READONLY,
     READWRITE,
+    NONE,
 }
 
 #[derive(Debug)]
@@ -81,27 +82,31 @@ impl Iterator for MemoryRegionIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let cols: Vec<String> = self
-                .lines
-                .next()
-                .unwrap()
-                .unwrap()
-                .split(" ")
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
+            let line = self.lines.next()?.unwrap().trim().to_string();
 
-            let mut range = cols[0].split("-").map(|s| s.parse().unwrap());
-            let range: Range<usize> = range.next().unwrap()..range.next().unwrap();
+            let mut range = line.split(" ").nth(0).unwrap().split("-");
+            let range = usize::from_str_radix(range.next().unwrap(), 16).unwrap()
+                ..usize::from_str_radix(range.next().unwrap(), 16).unwrap();
+
+            let permission = match &line.split(" ").nth(1).unwrap()[0..2] {
+                "r-" => MemoryPermission::READONLY,
+                "rw" => MemoryPermission::READWRITE,
+                _ => MemoryPermission::NONE,
+            };
+
+            let info = line
+                .split(" ")
+                .skip(5)
+                .skip_while(|s| s.is_empty())
+                .next()
+                .or(Some(""))
+                .unwrap()
+                .to_string();
 
             return Some(MemoryRegionEntry {
                 range,
-                info: cols[5].clone(),
-                permission: match &cols[1][0..2] {
-                    "r-" => MemoryPermission::READONLY,
-                    "rw" => MemoryPermission::READWRITE,
-                    _ => continue,
-                },
+                permission,
+                info,
             });
         }
     }
@@ -114,7 +119,7 @@ mod tests {
     use crate::{MemoryRegionIterator, Process, ProcessIterator};
 
     fn create_child() -> Child {
-        Command::new("/usr/games/moon-buggy")
+        Command::new("/usr/bin/sleep")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -147,8 +152,10 @@ mod tests {
     fn memory_region_iterator() {
         let mut child = create_child();
 
+        let process = Process::new(child.id());
+
         //ptrace::attach(Pid::from_raw(child.id() as i32)).unwrap();
-        for region in MemoryRegionIterator::new(&Process::new(child.id())) {
+        for region in MemoryRegionIterator::new(&process) {
             println!("{:?}", region);
         }
         //ptrace::detach(Pid::from_raw(child.id() as i32), Signal::SIGCONT).unwrap();
