@@ -3,6 +3,9 @@ use std::io::{BufRead, BufReader};
 use std::ops::Range;
 use std::path::PathBuf;
 
+use nix::libc::{iovec, preadv};
+use nix::sys::uio::IoVec;
+
 #[derive(Debug)]
 pub struct Process {
     path: PathBuf,
@@ -26,6 +29,17 @@ impl Process {
             .unwrap()
             .trim()
             .to_owned()
+    }
+
+    pub fn read_process_memory(&self, start: usize, buffer: &mut [u8]) {
+        use std::os::unix::io::AsRawFd;
+
+        let file =  File::open(self.path.join("mem")).unwrap();
+        let iov = [IoVec::from_mut_slice(buffer); 1];
+
+        unsafe {
+            preadv(file.as_raw_fd(), iov.as_ptr() as *const iovec, 1, start as i64);
+        }
     }
 }
 
@@ -116,7 +130,9 @@ impl Iterator for MemoryRegionIterator {
 mod tests {
     use std::process::{Child, Command, Stdio};
 
-    use crate::{MemoryRegionIterator, Process, ProcessIterator};
+    use nix::{sys::{ptrace, signal::Signal}, unistd::Pid};
+
+    use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
 
     fn create_child() -> Child {
         Command::new("/usr/bin/sleep")
@@ -159,6 +175,28 @@ mod tests {
             println!("{:?}", region);
         }
         //ptrace::detach(Pid::from_raw(child.id() as i32), Signal::SIGCONT).unwrap();
+
+        child.kill().unwrap();
+    }
+
+    #[test]
+    fn read_process_memory() {
+        let mut child = create_child();
+
+        let process = Process::new(child.id());
+        
+        ptrace::attach(Pid::from_raw(child.id() as i32)).unwrap();
+        for region in MemoryRegionIterator::new(&process) {
+            match region.permission {
+                MemoryPermission::READONLY | MemoryPermission::READWRITE => {
+                    let mut buffer = vec![0u8; region.range.len()];
+                    process.read_process_memory(region.range.start, &mut buffer);
+                    buffer.iter().count();
+                },
+                _ => {}
+            }
+        }
+        ptrace::detach(Pid::from_raw(child.id() as i32), Signal::SIGCONT).unwrap();
 
         child.kill().unwrap();
     }
