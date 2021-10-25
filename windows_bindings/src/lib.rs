@@ -264,6 +264,7 @@ pub enum MemoryPermission {
 pub struct MemoryRegionEntry {
     pub range: Range<usize>,
     pub permission: MemoryPermission,
+    pub info: String,
 }
 
 pub struct MemoryRegionIterator<'a> {
@@ -324,6 +325,7 @@ impl Iterator for MemoryRegionIterator<'_> {
                                 PAGE_READWRITE => MemoryPermission::READWRITE,
                                 _ => continue,
                             },
+                            info: self.process.name()
                         },
                         _ => continue,
                     });
