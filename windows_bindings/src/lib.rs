@@ -13,7 +13,7 @@ use std::{
 
 use crate::Windows::Win32::{
     Foundation::{CloseHandle, HANDLE, HINSTANCE, MAX_PATH},
-    System::Diagnostics::{Debug::{ReadProcessMemory, WriteProcessMemory}, ToolHelp::PROCESSENTRY32W},
+    System::Diagnostics::{Debug::{ReadProcessMemory, WriteProcessMemory, DebugActiveProcess, DebugActiveProcessStop}, ToolHelp::PROCESSENTRY32W},
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW,
@@ -246,6 +246,18 @@ impl Process {
             }
         }
     }
+
+    pub fn suspend(&self) -> bool {
+        unsafe {
+            DebugActiveProcess(self.id()).as_bool()
+        }
+    }
+
+    pub fn stop_suspend(&self) -> bool {
+        unsafe {
+            DebugActiveProcessStop(self.id()).as_bool()
+        }
+    }
 }
 
 impl Drop for Process {
@@ -394,5 +406,12 @@ mod tests {
         let process = find_process();
 
         process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]);
+    }
+
+    #[test]
+    fn suspend() {
+        let process = find_process();
+        assert!(process.suspend());
+        assert!(process.stop_suspend());
     }
 }
