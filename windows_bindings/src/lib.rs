@@ -339,6 +339,13 @@ impl Iterator for MemoryRegionIterator<'_> {
 mod tests {
     use crate::{MemoryRegionIterator, Process, ProcessIterator};
 
+    fn find_process() -> Process {
+        let entry = ProcessIterator::new()
+            .find(|proc| proc.name() == "Doukutsu.exe")
+            .expect("failed to find Doukutsu.exe");
+        Process::new(entry.id())
+    }
+
     #[test]
     fn enumerate_processes() {
         ProcessIterator::new()
@@ -358,10 +365,7 @@ mod tests {
 
     #[test]
     fn accessible_memory_region() {
-        let entry = ProcessIterator::new()
-            .find(|proc| proc.name() == "Doukutsu.exe")
-            .expect("failed to find Doukutsu.exe");
-        let process = Process::new(entry.id());
+        let process = find_process();
         let module = process.module();
 
         let regions = MemoryRegionIterator::new(&process, module.modBaseAddr as usize);
@@ -370,10 +374,7 @@ mod tests {
 
     #[test]
     fn read_process_memory() {
-        let entry = ProcessIterator::new()
-            .find(|proc| proc.name() == "Doukutsu.exe")
-            .expect("failed to find Doukutsu.exe");
-        let process = Process::new(entry.id());
+        let process = find_process();
         let regions = MemoryRegionIterator::new(&process, 0usize);
 
         assert!(
@@ -390,10 +391,7 @@ mod tests {
 
     #[test]
     fn write_process_memory() {
-        let entry = ProcessIterator::new()
-            .find(|proc| proc.name() == "Doukutsu.exe")
-            .expect("failed to find Doukutsu.exe");
-        let process = Process::new(entry.id());
+        let process = find_process();
 
         process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]);
     }
