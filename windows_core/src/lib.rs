@@ -362,20 +362,21 @@ mod tests {
     fn read_write_process_memory() {
         let process = find_process();
 
-        let mut hp_bytes = [0u8; 4];
+        let mut old_hp_bytes = 0i32.to_le_bytes();
         process
-            .read_process_memory(0x0049E6CC, &mut hp_bytes)
+            .read_process_memory(0x0049E6CC, &mut old_hp_bytes)
             .unwrap();
-        assert_eq!(3, i32::from_le_bytes(hp_bytes));
+        let old_hp = i32::from_le_bytes(old_hp_bytes);
+
+        let mut new_hp_bytes = (old_hp + 1).to_le_bytes();
+        process
+            .write_process_memory(0x0049E6CC, &new_hp_bytes)
+            .unwrap();
 
         process
-            .write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8])
+            .read_process_memory(0x0049E6CC, &mut new_hp_bytes)
             .unwrap();
-
-        process
-            .read_process_memory(0x0049E6CC, &mut hp_bytes)
-            .unwrap();
-        assert_eq!(10, i32::from_le_bytes(hp_bytes));
+        assert_eq!(old_hp + 1, i32::from_le_bytes(new_hp_bytes));
     }
 
     #[test]
