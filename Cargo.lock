@@ -30,8 +30,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "cheat_engine_rust"
 version = "0.1.0"
 dependencies = [
- "linux",
- "windows 0.1.0",
+ "linux_core",
+ "windows_core",
 ]
 
 [[package]]
@@ -41,7 +41,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b2f96d100e1cf1929e7719b7edb3b90ab5298072638fccd77be9ce942ecdfce"
 
 [[package]]
-name = "linux"
+name = "linux_core"
 version = "0.1.0"
 dependencies = [
  "nix",
@@ -71,13 +71,6 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.1.0"
-dependencies = [
- "windows 0.29.0",
-]
-
-[[package]]
-name = "windows"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aac7fef12f4b59cd0a29339406cc9203ab44e440ddff6b3f5a41455349fa9cf3"
@@ -94,6 +87,13 @@ name = "windows_aarch64_msvc"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d027175d00b01e0cbeb97d6ab6ebe03b12330a35786cbaca5252b1c4bf5d9b"
+
+[[package]]
+name = "windows_core"
+version = "0.1.0"
+dependencies = [
+ "windows",
+]
 
 [[package]]
 name = "windows_i686_gnu"
