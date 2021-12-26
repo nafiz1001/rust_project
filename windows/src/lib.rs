@@ -37,7 +37,7 @@ impl ProcessEntry {
 
 pub struct ProcessIterator {
     handle: HANDLE,
-    count: usize,
+    first: bool,
 }
 
 impl ProcessIterator {
@@ -48,8 +48,8 @@ impl ProcessIterator {
                 panic!("CreateToolhelp32Snapshot failed");
             } else {
                 return Self {
-                    handle: handle,
-                    count: 0,
+                    handle,
+                    first: true,
                 };
             }
         }
@@ -67,18 +67,17 @@ impl Iterator for ProcessIterator {
         };
 
         unsafe {
-            if self.count == 0 {
+            if self.first {
                 if !Process32FirstW(self.handle, &mut process_entry).as_bool() {
                     panic!("Process32FirstW failed");
                 } else {
-                    self.count += 1;
+                    self.first = false;
                     return Some(ProcessEntry { process_entry });
                 }
             } else {
                 if !Process32NextW(self.handle, &mut process_entry).as_bool() {
                     return None;
                 } else {
-                    self.count += 1;
                     return Some(ProcessEntry { process_entry });
                 }
             }
@@ -88,7 +87,7 @@ impl Iterator for ProcessIterator {
 
 struct ModuleIterator {
     handle: HANDLE,
-    count: usize,
+    first: bool,
 }
 
 impl ModuleIterator {
@@ -98,7 +97,7 @@ impl ModuleIterator {
             if handle.is_invalid() {
                 panic!("CreateToolhelp32Snapshot failed");
             } else {
-                return Self { handle, count: 0 };
+                return Self { handle, first: false };
             }
         }
     }
@@ -115,18 +114,17 @@ impl Iterator for ModuleIterator {
         };
 
         unsafe {
-            if self.count == 0 {
+            if self.first {
                 if !Module32FirstW(self.handle, &mut module_entry).as_bool() {
                     panic!("Process32FirstW failed");
                 } else {
-                    self.count += 1;
+                    self.first = false;
                     return Some(module_entry);
                 }
             } else {
                 if !Module32NextW(self.handle, &mut module_entry).as_bool() {
                     return None;
                 } else {
-                    self.count += 1;
                     return Some(module_entry);
                 }
             }
@@ -151,6 +149,10 @@ impl Process {
                 false,
                 pid,
             );
+
+            if handle.is_invalid() {
+                panic!("OpenProcess failed for pid {}", pid);
+            }
         }
 
         Self { handle, pid }
@@ -168,9 +170,9 @@ impl Process {
         wide_chars_to_string(&self.module().szModule)
     }
 
-    pub fn read_process_memory<T>(&self, start: usize, buffer: &mut [T]) {
+    pub fn read_process_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), i64> {
         unsafe {
-            if !ReadProcessMemory(
+            if ReadProcessMemory(
                 self.handle,
                 start as *const c_void,
                 buffer.as_mut_ptr() as *mut c_void,
@@ -179,18 +181,16 @@ impl Process {
             )
             .as_bool()
             {
-                panic!(
-                    "ReadProcessMemory failed to read between the range {:#016x}..{:#016x}",
-                    start,
-                    (start + buffer.len() * size_of::<T>())
-                );
+                Ok(())
+            } else {
+                Err(GetLastError() as i64)
             }
         }
     }
 
-    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) {
+    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), i64> {
         unsafe {
-            if !WriteProcessMemory(
+            if WriteProcessMemory(
                 self.handle,
                 start as *mut c_void,
                 buffer.as_ptr() as *const c_void,
@@ -199,21 +199,31 @@ impl Process {
             )
             .as_bool()
             {
-                panic!(
-                    "WriteProcessMemory failed to write between the range {:#016x}..{:#016x}",
-                    start,
-                    (start + buffer.len())
-                );
+                Ok(())
+            } else {
+                Err(GetLastError() as i64)
             }
         }
     }
 
-    pub fn suspend(&self) -> bool {
-        unsafe { DebugActiveProcess(self.id()).as_bool() }
+    pub fn suspend(&self) -> Result<(), i64> {
+        unsafe {
+            if DebugActiveProcess(self.id()).as_bool() {
+                Ok(())
+            } else {
+                Err(GetLastError() as i64)
+            }
+        }
     }
 
-    pub fn resume(&self) -> bool {
-        unsafe { DebugActiveProcessStop(self.id()).as_bool() }
+    pub fn resume(&self) -> Result<(), i64> {
+        unsafe {
+            if DebugActiveProcessStop(self.id()).as_bool() {
+                Ok(())
+            } else {
+                Err(GetLastError() as i64)
+            }
+        }
     }
 }
 
@@ -341,10 +351,9 @@ mod tests {
 
         assert!(
             regions
-                .map(|r| {
+                .filter_map(|r| {
                     let mut buffer = vec![0u8; r.range.len()];
-                    process.read_process_memory(r.range.start, &mut buffer);
-                    return 1;
+                    process.read_process_memory(r.range.start, &mut buffer).unwrap()
                 })
                 .count()
                 > 0
@@ -355,13 +364,13 @@ mod tests {
     fn write_process_memory() {
         let process = find_process();
 
-        process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]);
+        process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]).unwrap();
     }
 
     #[test]
     fn suspend() {
         let process = find_process();
-        assert!(process.suspend());
-        assert!(process.resume());
+        process.suspend().unwrap();
+        process.resume().unwrap();
     }
 }
