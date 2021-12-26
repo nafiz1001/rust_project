@@ -97,7 +97,10 @@ impl ModuleIterator {
             if handle.is_invalid() {
                 panic!("CreateToolhelp32Snapshot failed");
             } else {
-                return Self { handle, first: false };
+                return Self {
+                    handle,
+                    first: false,
+                };
             }
         }
     }
@@ -243,7 +246,6 @@ pub enum MemoryPermission {
 pub struct MemoryRegionEntry {
     pub range: Range<usize>,
     pub permission: MemoryPermission,
-    pub info: String,
 }
 
 pub struct MemoryRegionIterator<'a> {
@@ -297,7 +299,6 @@ impl Iterator for MemoryRegionIterator<'_> {
                                 PAGE_READWRITE => MemoryPermission::READWRITE,
                                 _ => continue,
                             },
-                            info: self.process.name(),
                         },
                         _ => continue,
                     });
@@ -340,31 +341,41 @@ mod tests {
         let process = find_process();
         let module = process.module();
 
-        let regions = MemoryRegionIterator::new(&process, module.modBaseAddr as usize);
-        assert!(regions.count() > 0);
-    }
-
-    #[test]
-    fn read_process_memory() {
-        let process = find_process();
-        let regions = MemoryRegionIterator::new(&process, 0usize);
+        MemoryRegionIterator::new(&process, module.modBaseAddr as usize)
+            .find(|region| region.range.contains(&0x0049E6CC))
+            .expect("could not find 0x0049E6CC");
 
         assert!(
-            regions
-                .filter_map(|r| {
+            MemoryRegionIterator::new(&process, 0)
+                .filter(|r| {
                     let mut buffer = vec![0u8; r.range.len()];
-                    process.read_process_memory(r.range.start, &mut buffer).unwrap()
+                    process
+                        .read_process_memory(r.range.start, &mut buffer)
+                        .is_err()
                 })
                 .count()
-                > 0
+                == 0
         );
     }
 
     #[test]
-    fn write_process_memory() {
+    fn read_write_process_memory() {
         let process = find_process();
 
-        process.write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8]).unwrap();
+        let mut hp_bytes = [0u8; 4];
+        process
+            .read_process_memory(0x0049E6CC, &mut hp_bytes)
+            .unwrap();
+        assert_eq!(3, i32::from_le_bytes(hp_bytes));
+
+        process
+            .write_process_memory(0x0049E6CC, &[10u8, 0u8, 0u8, 0u8])
+            .unwrap();
+
+        process
+            .read_process_memory(0x0049E6CC, &mut hp_bytes)
+            .unwrap();
+        assert_eq!(10, i32::from_le_bytes(hp_bytes));
     }
 
     #[test]
