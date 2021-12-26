@@ -295,8 +295,8 @@ impl Iterator for MemoryRegionIterator<'_> {
                         MEM_COMMIT => MemoryRegionEntry {
                             range: BaseAddress as usize..BaseAddress as usize + RegionSize,
                             permission: match Protect {
-                                PAGE_READONLY => MemoryPermission::READONLY,
-                                PAGE_READWRITE => MemoryPermission::READWRITE,
+                                PAGE_READONLY | PAGE_EXECUTE_READ => MemoryPermission::READONLY,
+                                PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY => MemoryPermission::READWRITE,
                                 _ => continue,
                             },
                         },
