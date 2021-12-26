@@ -247,7 +247,6 @@ pub enum MemoryPermission {
 pub struct MemoryRegionEntry {
     pub range: Range<usize>,
     pub permission: MemoryPermission,
-    pub module: String,
 }
 
 pub struct MemoryRegionIterator<'a> {
@@ -303,28 +302,9 @@ impl Iterator for MemoryRegionIterator<'_> {
                             _ => continue,
                         };
 
-                        let mut module_handle = 0;
                         return Some(MemoryRegionEntry {
                             range: BaseAddress as usize..BaseAddress as usize + RegionSize,
                             permission,
-                            module: if GetModuleHandleExW(
-                                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                                    | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                PWSTR(BaseAddress as *mut u16),
-                                &mut module_handle,
-                            )
-                            .as_bool()
-                            {
-                                let mut name = [0u16; MAX_PATH as usize];
-                                GetModuleFileNameW(
-                                    module_handle,
-                                    PWSTR(name.as_mut_ptr()),
-                                    MAX_PATH,
-                                );
-                                wide_chars_to_string(&name)
-                            } else {
-                                "".to_string()
-                            },
                         });
                     } else {
                         continue;
