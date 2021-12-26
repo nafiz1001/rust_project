@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn suspend() {
+    fn suspend_resume() {
         let process = find_process();
         process.suspend().unwrap();
         process.resume().unwrap();
