@@ -304,7 +304,7 @@ impl Iterator for MemoryRegionIterator<'_> {
 
                     if State == MEM_COMMIT {
                         let permission = match Protect {
-                            PAGE_READONLY | PAGE_EXECUTE_READ => MemoryPermission::READONLY,
+                            // PAGE_READONLY | PAGE_EXECUTE_READ => MemoryPermission::READONLY,
                             PAGE_READWRITE
                             | PAGE_EXECUTE_READWRITE
                             | PAGE_WRITECOPY
