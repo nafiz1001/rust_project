@@ -1,8 +1,9 @@
-use std::mem::size_of;
-
-use windows_core::{
-    MemoryRegionIterator, Process,
+use std::{
+    io::{self, BufRead, Write},
+    mem::size_of,
 };
+
+use windows_core::{MemoryRegionIterator, Process, ProcessIterator};
 
 // struct Address {
 //     address: usize,
@@ -114,6 +115,113 @@ impl<'a> Scanner<'a> {
     }
 }
 
+fn cli() {
+    let process = Process::new(
+        ProcessIterator::new()
+            .find(|proc| proc.name() == "Doukutsu.exe")
+            .expect("could not find Doukutsu.exe")
+            .id(),
+    );
+    let mut scanner = Scanner::new(&process);
+
+    let mut line_processor = |line: &str| -> Result<String, String> {
+        match line
+        .split(" ")
+        .nth(0)
+        .ok_or("expected at least one argument".to_string())? {
+            "new_scan" => {
+                let expected = line
+                    .split(" ")
+                    .nth(1)
+                    .ok_or("new_scan [int]".to_string())?
+                    .parse()
+                    .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
+                scanner.new_scan(expected);
+                Ok("Scan done!".to_string())
+            }
+            "next_scan" => {
+                let expected = line
+                    .split(" ")
+                    .nth(1)
+                    .ok_or("next_scan [int]".to_string())?
+                    .parse()
+                    .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
+                scanner.next_scan(expected);
+                Ok("Scan done!".to_string())
+            }
+            "result_scan" => {
+                for &address in scanner.get_addresses().iter() {
+                    let mut value_buffer = i32::to_be_bytes(0);
+                    let value = match process.read_process_memory(address, &mut value_buffer) {
+                        Ok(_) => i32::from_le_bytes(value_buffer),
+                        Err(_) => continue,
+                    };
+                    println!("{:#08x}\t{}", address, value);
+                }
+                Ok("All result printed!".to_string())
+            }
+            "set_value" => {
+                let address = usize::from_str_radix(
+                    line
+                        .split(" ")
+                        .nth(1)
+                        .ok_or("set_value [address in hex] [int]".to_string())?,
+                    16)
+                    .or(Err("address argument could not be parsed as hexadecimal int"))?;
+
+                let value: i32 = line
+                    .split(" ")
+                    .nth(2)
+                    .ok_or("set_value [address] [int]".to_string())?
+                    .parse()
+                    .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
+
+                let int_buffer = value.to_le_bytes();
+                match  process.write_process_memory(address, &int_buffer) {
+                    Ok(_) => Ok(format!("wrote {} at address {:#08x}", value, address)),
+                    Err(_) => Err(format!("could not write to {:#08x}", address)),
+                }
+            }
+            "get_value" => {
+                let address = usize::from_str_radix(
+                    line
+                        .split(" ")
+                        .nth(1)
+                        .ok_or("get_value [address in hex]".to_string())?,
+                    16)
+                    .or(Err("address argument could not be parsed as hexadecimal int"))?;
+
+                let mut int_buffer = i32::to_le_bytes(0);
+                match  process.read_process_memory(address, &mut int_buffer) {
+                    Ok(_) => Ok(i32::from_le_bytes(int_buffer).to_string()),
+                    Err(_) => Err(format!("could not read at {:#08x}", address)),
+                }
+            }
+            _ => {
+                return Err("The only supported operations are: new_scan [int], next_scan [int], result_scan, get_value [address in hex] and set_value [address in hex] [int]".to_string())
+            }
+        }
+    };
+
+    println!("The only supported operations are: new_scan [int], next_scan [int], result_scan, get_value [address in hex] and set_value [address in hex] [int]");
+    print!("> ");
+    io::stdout().flush().unwrap();
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line.unwrap();
+        match line_processor(&line) {
+            Ok(s) => {
+                println!("{}", s)
+            }
+            Err(err) => {
+                println!("{}", err)
+            }
+        }
+        print!("> ");
+        io::stdout().flush().unwrap();
+    }
+}
+
 fn main() {
-    println!("Hello World!");
+    cli();
 }
