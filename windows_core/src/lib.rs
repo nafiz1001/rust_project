@@ -9,7 +9,6 @@ use windows::Win32::{
     Foundation::*,
     System::{
         Diagnostics::{Debug::*, ToolHelp::*},
-        LibraryLoader::*,
         Memory::*,
         Threading::*,
     },
@@ -239,14 +238,24 @@ impl Drop for Process {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum MemoryPermission {
     READONLY,
     READWRITE,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum MemoryType {
+    STATIC,
+    STACK,
+    HEAP,
+    UNKNOWN,
+}
+
 pub struct MemoryRegionEntry {
     pub range: Range<usize>,
     pub permission: MemoryPermission,
+    pub memory_type: MemoryType,
 }
 
 pub struct MemoryRegionIterator<'a> {
@@ -286,6 +295,7 @@ impl Iterator for MemoryRegionIterator<'_> {
                         RegionSize,
                         State,
                         Protect,
+                        AllocationBase,
                         ..
                     } = self.memory_basic_information;
 
@@ -302,9 +312,17 @@ impl Iterator for MemoryRegionIterator<'_> {
                             _ => continue,
                         };
 
+                        let memory_type =
+                            if AllocationBase == self.process.module().modBaseAddr as *mut c_void {
+                                MemoryType::STATIC
+                            } else {
+                                MemoryType::UNKNOWN
+                            };
+
                         return Some(MemoryRegionEntry {
                             range: BaseAddress as usize..BaseAddress as usize + RegionSize,
                             permission,
+                            memory_type,
                         });
                     } else {
                         continue;
@@ -317,7 +335,7 @@ impl Iterator for MemoryRegionIterator<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{MemoryRegionIterator, Process, ProcessIterator};
+    use crate::{MemoryRegionIterator, MemoryType, Process, ProcessIterator};
 
     fn find_process() -> Process {
         let entry = ProcessIterator::new()
@@ -347,6 +365,22 @@ mod tests {
     fn accessible_memory_region() {
         let process = find_process();
         let module = process.module();
+
+        for region in MemoryRegionIterator::new(&process, 0) {
+            if region.range.start >= module.modBaseAddr as usize
+                && region.range.start
+                    < unsafe { module.modBaseAddr.offset(module.modBaseSize as isize) } as usize
+            {
+                assert_eq!(
+                    MemoryType::STATIC,
+                    region.memory_type,
+                    "the region {:?} is not static",
+                    region.range
+                );
+            } else {
+                assert_eq!(MemoryType::UNKNOWN, region.memory_type);
+            }
+        }
 
         MemoryRegionIterator::new(&process, module.modBaseAddr as usize)
             .find(|region| region.range.contains(&0x0049E6CC))
