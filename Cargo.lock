@@ -25,6 +25,7 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "linux",
+ "scanner",
  "windows 0.1.0",
 ]
 
@@ -60,6 +61,14 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "scanner"
+version = "0.1.0"
+dependencies = [
+ "linux",
+ "windows 0.1.0",
 ]
 
 [[package]]

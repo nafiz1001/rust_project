@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "scanner"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,4 +12,3 @@ windows = { path = "../windows" }
 linux = { path = "../linux" }
 
 [dependencies]
-scanner = { path = "../scanner" }

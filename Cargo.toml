@@ -1,7 +1,8 @@
 [workspace]
 
 members = [
-    "cli",
     "windows",
     "linux",
+    "scanner",
+    "cli",
 ]
