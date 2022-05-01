@@ -102,22 +102,28 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn next_scan(&mut self, expected: i32) {
+    pub fn next_scan<T: PartialEq>(&mut self, expected: T) {
         self.addresses = self
             .addresses
             .iter()
             .filter_map(|&address| {
-                let mut int_buffer = [0u8; size_of::<i32>()];
+                let mut buffer = vec![0u8; size_of::<T>()];
                 self.process
-                    .read_process_memory(address, &mut int_buffer[..])
+                    .read_process_memory(address, &mut buffer)
                     .ok()?;
-                let actual = i32::from_le_bytes(int_buffer);
 
-                return if actual == expected {
-                    Some(address)
-                } else {
-                    None
-                };
+                unsafe {
+                    let actual = std::slice::from_raw_parts(
+                        buffer.as_ptr() as *const T,
+                        1,
+                    );
+
+                    return if actual[0] == expected {
+                        Some(address)
+                    } else {
+                        None
+                    };
+                }
             })
             .collect();
     }
@@ -156,7 +162,7 @@ fn cli() {
                     .split(" ")
                     .nth(1)
                     .ok_or("next_scan [int]".to_string())?
-                    .parse()
+                    .parse::<i32>()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
                 scanner.next_scan(expected);
                 Ok("Scan done!".to_string())
