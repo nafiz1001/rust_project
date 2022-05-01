@@ -1,9 +1,10 @@
 use std::fs::{self, File, ReadDir};
-use std::io::{BufRead, BufReader, IoSliceMut};
+use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
+use std::mem::size_of;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use nix::sys::uio::{process_vm_readv, RemoteIoVec};
+use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
 
 #[derive(Debug)]
 pub struct Process {
@@ -59,8 +60,29 @@ impl Process {
         }
     }
 
-    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), i64> {
-        Err((start + buffer.len()) as i64)
+    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) -> Result<isize, isize> {
+        use nix::unistd::Pid;
+
+        unsafe {
+            let bytes = std::slice::from_raw_parts(
+                buffer.as_ptr() as *const u8,
+                buffer.len() * size_of::<T>(),
+            );
+
+            let mut local = [IoSlice::new(bytes); 1];
+            let remote = [RemoteIoVec {
+                base: start,
+                len: bytes.len(),
+            }; 1];
+
+            match process_vm_writev(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
+                Ok(x) => Ok(x as isize),
+                Err(errno) => {
+                    println!("{}", errno.desc());
+                    Err(errno as isize)
+                }
+            }
+        }
     }
 }
 
