@@ -1,13 +1,13 @@
 use std::{
     io::{self, BufRead, Write},
-    mem::size_of,
+    mem::size_of, process::Command,
 };
 
 #[cfg(target_os = "windows")]
-use windows::{MemoryRegionIterator, Process, ProcessIterator};
+use windows::{MemoryRegionIterator, Process};
 
 #[cfg(target_os = "linux")]
-use linux::{MemoryRegionIterator, Process, ProcessIterator};
+use linux::{MemoryRegionIterator, Process};
 
 // struct Address {
 //     address: usize,
@@ -120,19 +120,15 @@ impl<'a> Scanner<'a> {
 }
 
 fn cli() {
-    let mut processes: Vec<_> = ProcessIterator::new().collect();
-    processes.sort_by(|a, b| a.name().cmp(&b.name()));
-    for process in processes {
-        println!("{}\t{}", process.pid(), process.name());
-    }
-    print!("Pick your process: ");
+    print!("Enter process path: ");
     io::stdout().flush().unwrap();
     let stdin = io::stdin();
     let mut buf = String::new();
     stdin.read_line(&mut buf).unwrap();
-    buf.retain(|c| !c.is_whitespace());
-    let pid: u32 = buf.parse().unwrap();
-    let process = Process::new(pid);
+
+    let path = buf.trim();
+    let child = Command::new(path).spawn().unwrap();
+    let process = Process::new(child.id());
 
     let mut scanner = Scanner::new(&process);
 
