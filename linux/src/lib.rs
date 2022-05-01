@@ -1,8 +1,8 @@
-use core::ProcessTrait;
+use core::{MemoryKind, MemoryPermission, MemoryRegion, ProcessTrait};
+
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
-use std::ops::Range;
 use std::path::PathBuf;
 
 use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
@@ -130,41 +130,26 @@ impl Iterator for ProcessIterator {
     }
 }
 
-#[derive(Debug)]
-pub enum MemoryPermission {
-    READONLY,
-    READWRITE,
-    NONE,
-}
-
-#[derive(Debug)]
-pub struct MemoryRegionEntry {
-    pub range: Range<usize>,
-    pub permission: MemoryPermission,
-}
-
-pub struct MemoryRegionIterator<'a> {
+pub struct MemoryRegionIterator {
     lines: std::io::Lines<BufReader<File>>,
     starting_address: usize,
-    process: &'a Process,
 }
 
-impl<'a> MemoryRegionIterator<'a> {
-    pub fn new(process: &'a Process, starting_address: usize) -> Self {
+impl MemoryRegionIterator {
+    pub fn new(process: &Process, starting_address: usize) -> Self {
         Self {
             lines: BufReader::new(File::open(process.proc_path.join("maps")).unwrap()).lines(),
             starting_address,
-            process,
         }
     }
 }
 
-impl<'a> Iterator for MemoryRegionIterator<'a> {
-    type Item = MemoryRegionEntry;
+impl Iterator for MemoryRegionIterator {
+    type Item = MemoryRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let line = self.lines.next()?.unwrap().trim().to_string();
+            let line: String = self.lines.next()?.unwrap().trim().to_string();
 
             let mut range = line.split(" ").nth(0).unwrap().split("-");
             let range = usize::from_str_radix(range.next().unwrap(), 16).unwrap()
@@ -184,10 +169,19 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     .next()
                     .unwrap_or("");
 
-                let patterns = ["stack".to_string(), "heap".to_string(), self.process.name()];
-                if patterns.iter().any(|p| info.contains(p)) {
-                    return Some(MemoryRegionEntry { range, permission });
-                }
+                let kind = if info.contains("stack") {
+                    MemoryKind::STACK
+                } else if info.contains("heap") {
+                    MemoryKind::HEAP
+                } else {
+                    MemoryKind::UNKNOWN
+                };
+
+                return Some(MemoryRegion {
+                    range,
+                    permission,
+                    kind,
+                });
             }
         }
     }
@@ -236,11 +230,7 @@ mod tests {
 
         let process = Process::new(child.id() as i64);
 
-        //ptrace::attach(Pid::from_raw(child.id() as i32)).unwrap();
-        for region in MemoryRegionIterator::new(&process, 0) {
-            println!("{:?}", region);
-        }
-        //ptrace::detach(Pid::from_raw(child.id() as i32), Signal::SIGCONT).unwrap();
+        for _ in MemoryRegionIterator::new(&process, 0) {}
 
         child.kill().unwrap();
     }
