@@ -1,6 +1,7 @@
 use std::{
     io::{self, BufRead, Write},
-    mem::size_of, process::Command,
+    mem::size_of,
+    process::Command,
 };
 
 #[cfg(target_os = "windows")]
@@ -77,7 +78,7 @@ impl<'a> Scanner<'a> {
         &self.addresses[..]
     }
 
-    pub fn new_scan(&mut self, expected: i32) {
+    pub fn new_scan<T: PartialEq>(&mut self, expected: T) {
         self.addresses.clear();
 
         for region in MemoryRegionIterator::new(self.process, 0) {
@@ -86,13 +87,16 @@ impl<'a> Scanner<'a> {
                 .read_process_memory(region.range.start, &mut region_buffer)
                 .unwrap();
 
-            for offset in 0..region_buffer.len() - size_of::<i32>() {
-                let mut int_buffer = [0u8; size_of::<i32>()];
-                int_buffer.copy_from_slice(&region_buffer[offset..offset + size_of::<i32>()]);
-                let actual = i32::from_le_bytes(int_buffer);
+            for offset in 0..region_buffer.len() - size_of::<T>() {
+                unsafe {
+                    let actual = std::slice::from_raw_parts(
+                        region_buffer.as_ptr().offset(offset as isize) as *const T,
+                        1,
+                    );
 
-                if actual == expected {
-                    self.addresses.push(region.range.start + offset);
+                    if actual[0] == expected {
+                        self.addresses.push(region.range.start + offset);
+                    }
                 }
             }
         }
