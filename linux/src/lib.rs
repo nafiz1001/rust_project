@@ -44,18 +44,25 @@ impl Process {
         ptrace::detach(Pid::from_raw(self.pid() as i32), Signal::SIGCONT).unwrap();
     }
 
-    pub fn read_process_memory(&self, start: usize, buffer: &mut [u8]) -> Result<isize, isize> {
+    pub fn read_process_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<isize, isize> {
         use nix::unistd::Pid;
 
-        let len = buffer.len();
-        let mut local = [IoSliceMut::new(buffer); 1];
-        let remote = [RemoteIoVec { base: start, len }; 1];
+        unsafe {
+            let bytes = std::slice::from_raw_parts_mut(
+                buffer.as_ptr() as *mut u8,
+                buffer.len() * size_of::<T>(),
+            );
+            let len = bytes.len();
 
-        match process_vm_readv(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
-            Ok(x) => Ok(x as isize),
-            Err(errno) => {
-                println!("{}", errno.desc());
-                Err(errno as isize)
+            let mut local = [IoSliceMut::new(bytes); 1];
+            let remote = [RemoteIoVec { base: start, len }; 1];
+
+            match process_vm_readv(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
+                Ok(x) => Ok(x as isize),
+                Err(errno) => {
+                    println!("{}", errno.desc());
+                    Err(errno as isize)
+                }
             }
         }
     }

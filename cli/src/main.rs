@@ -142,7 +142,7 @@ fn cli() {
                     .split(" ")
                     .nth(1)
                     .ok_or("new_scan [int]".to_string())?
-                    .parse()
+                    .parse::<i32>()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
                 scanner.new_scan(expected);
                 Ok("Scan done!".to_string())
@@ -159,9 +159,9 @@ fn cli() {
             }
             "result_scan" => {
                 for &address in scanner.get_addresses().iter() {
-                    let mut value_buffer = i32::to_be_bytes(0);
-                    let value = match process.read_process_memory(address, &mut value_buffer) {
-                        Ok(_) => i32::from_le_bytes(value_buffer),
+                    let mut value = [0];
+                    let value = match process.read_process_memory(address, &mut value) {
+                        Ok(_) => value[0],
                         Err(_) => continue,
                     };
                     println!("{:#08x}\t{}", address, value);
@@ -183,10 +183,10 @@ fn cli() {
                     .ok_or("set_value [address] [int]".to_string())?
                     .parse()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
+                let value = [value];
 
-                let int_buffer = value.to_le_bytes();
-                match  process.write_process_memory(address, &int_buffer) {
-                    Ok(_) => Ok(format!("wrote {} at address {:#08x}", value, address)),
+                match  process.write_process_memory(address, &value) {
+                    Ok(_) => Ok(format!("wrote {} at address {:#08x}", value[0], address)),
                     Err(_) => Err(format!("could not write to {:#08x}", address)),
                 }
             }
@@ -199,9 +199,9 @@ fn cli() {
                     16)
                     .or(Err("address argument could not be parsed as hexadecimal int"))?;
 
-                let mut int_buffer = i32::to_le_bytes(0);
-                match  process.read_process_memory(address, &mut int_buffer) {
-                    Ok(_) => Ok(i32::from_le_bytes(int_buffer).to_string()),
+                let mut value = [0];
+                match  process.read_process_memory(address, &mut value) {
+                    Ok(_) => Ok(value[0].to_string()),
                     Err(_) => Err(format!("could not read at {:#08x}", address)),
                 }
             }
