@@ -120,12 +120,20 @@ impl<'a> Scanner<'a> {
 }
 
 fn cli() {
-    let process = Process::new(
-        ProcessIterator::new()
-            .find(|proc| proc.name() == "Doukutsu.exe")
-            .expect("could not find Doukutsu.exe")
-            .pid(),
-    );
+    let mut processes: Vec<_> = ProcessIterator::new().collect();
+    processes.sort_by(|a, b| a.name().cmp(&b.name()));
+    for process in processes {
+        println!("{}\t{}", process.pid(), process.name());
+    }
+    print!("Pick your process: ");
+    io::stdout().flush().unwrap();
+    let stdin = io::stdin();
+    let mut buf = String::new();
+    stdin.read_line(&mut buf).unwrap();
+    buf.retain(|c| !c.is_whitespace());
+    let pid: u32 = buf.parse().unwrap();
+    let process = Process::new(pid);
+
     let mut scanner = Scanner::new(&process);
 
     let mut line_processor = |line: &str| -> Result<String, String> {
