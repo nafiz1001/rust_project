@@ -1,4 +1,4 @@
-use core::ProcessInterface;
+use core::ProcessTrait;
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
@@ -14,7 +14,7 @@ pub struct Process {
     pid: i64,
 }
 
-impl ProcessInterface for Process {
+impl ProcessTrait for Process {
     fn new(pid: i64) -> Self {
         Self {
             proc_path: ["/proc", &pid.to_string()].iter().collect(),
@@ -198,7 +198,7 @@ mod tests {
     use std::process::{Child, Command, Stdio};
 
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
-    use core::ProcessInterface;
+    use core::ProcessTrait;
 
     fn create_child() -> Child {
         Command::new("/usr/bin/sleep")

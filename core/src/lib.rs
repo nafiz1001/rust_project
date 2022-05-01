@@ -1,4 +1,4 @@
-pub trait ProcessInterface {
+pub trait ProcessTrait {
     fn new(pid: i64) -> Self;
 
     fn pid(&self) -> i64;
