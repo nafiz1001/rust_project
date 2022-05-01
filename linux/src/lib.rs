@@ -148,11 +148,10 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     .skip(5)
                     .skip_while(|s| s.is_empty())
                     .next()
-                    .or(Some(""))
-                    .unwrap();
+                    .unwrap_or("");
 
                 let patterns = ["stack".to_string(), "heap".to_string(), self.process.name()];
-                if patterns.iter().all(|p| info.contains(p)) {
+                if patterns.iter().any(|p| info.contains(p)) {
                     return Some(MemoryRegionEntry { range, permission });
                 }
             }
