@@ -35,7 +35,7 @@ fn cli() {
                     .ok_or("new_scan [int]".to_string())?
                     .parse::<i32>()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
-                scanner.new_scan(expected);
+                scanner.new_scan(|&actual| expected == actual);
                 Ok("Scan done!".to_string())
             }
             "next_scan" => {
@@ -45,7 +45,7 @@ fn cli() {
                     .ok_or("next_scan [int]".to_string())?
                     .parse::<i32>()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
-                scanner.next_scan(expected);
+                scanner.next_scan(|&actual| expected == actual);
                 Ok("Scan done!".to_string())
             }
             "result_scan" => {

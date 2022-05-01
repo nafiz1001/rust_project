@@ -22,7 +22,7 @@ impl<'a> Scanner<'a> {
         &self.addresses[..]
     }
 
-    pub fn new_scan<T: PartialEq>(&mut self, expected: T) {
+    pub fn new_scan<T: PartialEq, P: FnMut(&T) -> bool>(&mut self, mut predicate: P) {
         self.addresses.clear();
 
         for region in MemoryRegionIterator::new(self.process, 0) {
@@ -38,7 +38,7 @@ impl<'a> Scanner<'a> {
                         1,
                     );
 
-                    if actual[0] == expected {
+                    if predicate(&actual[0]) {
                         self.addresses.push(region.range.start + offset);
                     }
                 }
@@ -46,7 +46,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn next_scan<T: PartialEq>(&mut self, expected: T) {
+    pub fn next_scan<T: PartialEq, P: FnMut(&T) -> bool>(&mut self, mut predicate: P) {
         self.addresses = self
             .addresses
             .iter()
@@ -59,7 +59,7 @@ impl<'a> Scanner<'a> {
                 unsafe {
                     let actual = std::slice::from_raw_parts(buffer.as_ptr() as *const T, 1);
 
-                    return if actual[0] == expected {
+                    return if predicate(&actual[0]) {
                         Some(address)
                     } else {
                         None
