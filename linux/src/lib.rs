@@ -1,10 +1,9 @@
 use std::fs::{self, File, ReadDir};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, IoSliceMut};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use nix::libc::{iovec, preadv};
-use nix::sys::uio::IoVec;
+use nix::sys::uio::{process_vm_readv, RemoteIoVec};
 
 #[derive(Debug)]
 pub struct Process {
@@ -32,10 +31,7 @@ impl Process {
     }
 
     pub fn attach(&self) {
-        use nix::{
-            sys::ptrace,
-            unistd::Pid,
-        };
+        use nix::{sys::ptrace, unistd::Pid};
         ptrace::attach(Pid::from_raw(self.pid() as i32)).unwrap();
     }
 
@@ -48,23 +44,17 @@ impl Process {
     }
 
     pub fn read_process_memory(&self, start: usize, buffer: &mut [u8]) -> Result<isize, isize> {
-        use std::os::unix::io::AsRawFd;
+        use nix::unistd::Pid;
 
-        let file = File::open(self.proc_path.join("mem")).unwrap();
-        let iov = [IoVec::from_mut_slice(buffer); 1];
+        let len = buffer.len();
+        let mut local = [IoSliceMut::new(buffer); 1];
+        let remote = [RemoteIoVec { base: start, len }; 1];
 
-        unsafe {
-            let result = preadv(
-                file.as_raw_fd(),
-                iov.as_ptr() as *const iovec,
-                1,
-                start as i64,
-            );
-
-            if result < 0 {
-                Ok(result)
-            } else {
-                Err(result)
+        match process_vm_readv(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
+            Ok(x) => Ok(x as isize),
+            Err(errno) => {
+                println!("{}", errno.desc());
+                Err(errno as isize)
             }
         }
     }
