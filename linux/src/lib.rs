@@ -130,21 +130,23 @@ impl Iterator for ProcessIterator {
     }
 }
 
-pub struct MemoryRegionIterator {
+pub struct MemoryRegionIterator<'a> {
     lines: std::io::Lines<BufReader<File>>,
     starting_address: usize,
+    process: &'a Process,
 }
 
-impl MemoryRegionIterator {
-    pub fn new(process: &Process, starting_address: usize) -> Self {
+impl<'a> MemoryRegionIterator<'a> {
+    pub fn new(process: &'a Process, starting_address: usize) -> Self {
         Self {
             lines: BufReader::new(File::open(process.proc_path.join("maps")).unwrap()).lines(),
             starting_address,
+            process,
         }
     }
 }
 
-impl Iterator for MemoryRegionIterator {
+impl<'a> Iterator for MemoryRegionIterator<'a> {
     type Item = MemoryRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -173,8 +175,10 @@ impl Iterator for MemoryRegionIterator {
                     MemoryKind::STACK
                 } else if info.contains("heap") {
                     MemoryKind::HEAP
-                } else {
+                } else if info.contains(self.process.name().as_str()) {
                     MemoryKind::UNKNOWN
+                } else {
+                    continue;
                 };
 
                 return Some(MemoryRegion {
