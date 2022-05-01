@@ -3,48 +3,50 @@ use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::PathBuf;
+use core::ProcessInterface;
 
 use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
 
 #[derive(Debug)]
 pub struct Process {
     proc_path: PathBuf,
-    pid: u32,
+    pid: i64,
 }
 
-impl Process {
-    pub fn new(pid: u32) -> Self {
+impl ProcessInterface for Process {
+    fn new(pid: i64) -> Self {
         Self {
             proc_path: ["/proc", &pid.to_string()].iter().collect(),
             pid,
         }
     }
 
-    pub fn pid(&self) -> u32 {
-        self.pid
+    fn pid(&self) -> i64 {
+        self.pid as i64
     }
 
-    pub fn name(&self) -> String {
+    fn name(&self) -> String {
         fs::read_to_string(self.proc_path.join("comm"))
             .unwrap()
             .trim()
-            .to_owned()
+            .to_string()
     }
 
-    pub fn attach(&self) {
+    fn attach(&self) -> Result<(), String> {
         use nix::{sys::ptrace, unistd::Pid};
-        ptrace::attach(Pid::from_raw(self.pid() as i32)).unwrap();
+        ptrace::attach(Pid::from_raw(self.pid() as i32)).map_err(|op| op.desc().to_string())
     }
 
-    pub fn detach(&self) {
+    fn detach(&self) -> Result<(), String> {
         use nix::{
             sys::{ptrace, signal::Signal},
             unistd::Pid,
         };
-        ptrace::detach(Pid::from_raw(self.pid() as i32), Signal::SIGCONT).unwrap();
+        ptrace::detach(Pid::from_raw(self.pid() as i32), Signal::SIGCONT)
+            .map_err(|op| op.desc().to_string())
     }
 
-    pub fn read_process_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<isize, isize> {
+    fn read_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -58,16 +60,13 @@ impl Process {
             let remote = [RemoteIoVec { base: start, len }; 1];
 
             match process_vm_readv(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
-                Ok(x) => Ok(x as isize),
-                Err(errno) => {
-                    println!("{}", errno.desc());
-                    Err(errno as isize)
-                }
+                Ok(_) => Ok(()),
+                Err(errno) => Err(errno.desc().to_string())
             }
         }
     }
 
-    pub fn write_process_memory<T>(&self, start: usize, buffer: &[T]) -> Result<isize, isize> {
+    fn write_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -83,10 +82,9 @@ impl Process {
             }; 1];
 
             match process_vm_writev(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
-                Ok(x) => Ok(x as isize),
+                Ok(_) => Ok(()),
                 Err(errno) => {
-                    println!("{}", errno.desc());
-                    Err(errno as isize)
+                    Err(errno.desc().to_string())
                 }
             }
         }
@@ -111,7 +109,7 @@ impl Iterator for ProcessIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.dirs
             .find_map(|dir| dir.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
-            .and_then(|pid| Some(Process::new(pid)))
+            .and_then(|pid| Some(Process::new(pid as i64)))
     }
 }
 
@@ -182,6 +180,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
 mod tests {
     use std::process::{Child, Command, Stdio};
 
+    use core::ProcessInterface;
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
 
     fn create_child() -> Child {
@@ -209,7 +208,7 @@ mod tests {
     fn new_process() {
         let mut child = create_child();
 
-        Process::new(child.id());
+        Process::new(child.id() as i64);
 
         child.kill().unwrap();
     }
@@ -218,7 +217,7 @@ mod tests {
     fn memory_region_iterator() {
         let mut child = create_child();
 
-        let process = Process::new(child.id());
+        let process = Process::new(child.id() as i64);
 
         //ptrace::attach(Pid::from_raw(child.id() as i32)).unwrap();
         for region in MemoryRegionIterator::new(&process, 0) {
@@ -233,22 +232,22 @@ mod tests {
     fn read_process_memory() {
         let mut child = create_child();
 
-        let process = Process::new(child.id());
+        let process = Process::new(child.id() as i64);
 
-        process.attach();
+        process.attach().unwrap();
         for region in MemoryRegionIterator::new(&process, 0) {
             match region.permission {
                 MemoryPermission::READONLY | MemoryPermission::READWRITE => {
                     let mut buffer = vec![0u8; region.range.len()];
                     process
-                        .read_process_memory(region.range.start, &mut buffer)
+                        .read_memory(region.range.start, &mut buffer)
                         .unwrap();
                     buffer.iter().count();
                 }
                 _ => {}
             }
         }
-        process.detach();
+        process.detach().unwrap();
 
         child.kill().unwrap();
     }

@@ -1,5 +1,7 @@
 use std::mem::size_of;
 
+use core::ProcessInterface;
+
 #[cfg(target_os = "linux")]
 use linux::{MemoryRegionIterator, Process};
 #[cfg(target_os = "windows")]
@@ -29,7 +31,7 @@ impl<'a> Scanner<'a> {
             let mut region_buffer = vec![0u8; region.range.len()];
             match self
                 .process
-                .read_process_memory(region.range.start, &mut region_buffer)
+                .read_memory(region.range.start, &mut region_buffer)
             {
                 Ok(_) => {}
                 Err(_) => continue,
@@ -57,7 +59,7 @@ impl<'a> Scanner<'a> {
             .filter_map(|&address| {
                 let mut buffer = vec![0u8; size_of::<T>()];
                 self.process
-                    .read_process_memory(address, &mut buffer)
+                    .read_memory(address, &mut buffer)
                     .ok()?;
 
                 unsafe {

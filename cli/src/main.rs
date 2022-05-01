@@ -3,6 +3,8 @@ use std::{
     process::Command,
 };
 
+use core::ProcessInterface;
+
 #[cfg(target_os = "linux")]
 use linux::Process;
 #[cfg(target_os = "windows")]
@@ -19,7 +21,7 @@ fn cli() {
 
     let path = buf.trim();
     let child = Command::new(path).spawn().unwrap();
-    let process = Process::new(child.id());
+    let process = Process::new(child.id() as i64);
 
     let mut scanner = Scanner::new(&process);
 
@@ -51,7 +53,7 @@ fn cli() {
             "result_scan" => {
                 for &address in scanner.get_addresses().iter() {
                     let mut value = [0];
-                    let value = match process.read_process_memory(address, &mut value) {
+                    let value = match process.read_memory(address, &mut value) {
                         Ok(_) => value[0],
                         Err(_) => continue,
                     };
@@ -76,7 +78,7 @@ fn cli() {
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
                 let value = [value];
 
-                match  process.write_process_memory(address, &value) {
+                match  process.write_memory(address, &value) {
                     Ok(_) => Ok(format!("wrote {} at address {:#08x}", value[0], address)),
                     Err(_) => Err(format!("could not write to {:#08x}", address)),
                 }
@@ -91,7 +93,7 @@ fn cli() {
                     .or(Err("address argument could not be parsed as hexadecimal int"))?;
 
                 let mut value = [0];
-                match  process.read_process_memory(address, &mut value) {
+                match  process.read_memory(address, &mut value) {
                     Ok(_) => Ok(value[0].to_string()),
                     Err(_) => Err(format!("could not read at {:#08x}", address)),
                 }
