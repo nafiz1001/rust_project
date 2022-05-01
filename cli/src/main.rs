@@ -207,7 +207,7 @@ fn cli() {
         }
     };
 
-    println!("The only supported operations are: new_scan [int], next_scan [int], result_scan, get_value [address in hex] and set_value [address in hex] [int]");
+    println!("The supported operations are: new_scan [int], next_scan [int], result_scan, get_value [address in hex] and set_value [address in hex] [int]");
     print!("> ");
     io::stdout().flush().unwrap();
     let stdin = io::stdin();
