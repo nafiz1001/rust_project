@@ -3,7 +3,11 @@ use std::{
     mem::size_of,
 };
 
-use linux_core::{MemoryRegionIterator, Process, ProcessIterator};
+#[cfg(target_os = "windows")]
+use windows::{MemoryRegionIterator, Process, ProcessIterator};
+
+#[cfg(target_os = "linux")]
+use linux::{MemoryRegionIterator, Process, ProcessIterator};
 
 // struct Address {
 //     address: usize,
