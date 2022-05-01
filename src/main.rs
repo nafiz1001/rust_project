@@ -3,7 +3,7 @@ use std::{
     mem::size_of,
 };
 
-use windows_core::{MemoryRegionIterator, Process, ProcessIterator};
+use linux_core::{MemoryRegionIterator, Process, ProcessIterator};
 
 // struct Address {
 //     address: usize,
@@ -120,7 +120,7 @@ fn cli() {
         ProcessIterator::new()
             .find(|proc| proc.name() == "Doukutsu.exe")
             .expect("could not find Doukutsu.exe")
-            .id(),
+            .pid(),
     );
     let mut scanner = Scanner::new(&process);
 
