@@ -27,9 +27,13 @@ impl<'a> Scanner<'a> {
 
         for region in MemoryRegionIterator::new(self.process, 0) {
             let mut region_buffer = vec![0u8; region.range.len()];
-            self.process
+            match self
+                .process
                 .read_process_memory(region.range.start, &mut region_buffer)
-                .unwrap();
+            {
+                Ok(_) => {}
+                Err(_) => continue,
+            }
 
             for offset in 0..region_buffer.len() - size_of::<T>() {
                 unsafe {
