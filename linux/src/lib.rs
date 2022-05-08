@@ -94,13 +94,13 @@ impl ProcessTrait for Process {
                 buffer.len() * size_of::<T>(),
             );
 
-            let mut local = [IoSlice::new(bytes); 1];
+            let local = [IoSlice::new(bytes); 1];
             let remote = [RemoteIoVec {
                 base: start,
                 len: bytes.len(),
             }; 1];
 
-            match process_vm_writev(Pid::from_raw(self.pid() as i32), &mut local, &remote) {
+            match process_vm_writev(Pid::from_raw(self.pid() as i32), &local, &remote) {
                 Ok(_) => Ok(()),
                 Err(errno) => Err(errno.desc().to_string()),
             }
@@ -110,6 +110,12 @@ impl ProcessTrait for Process {
 
 pub struct ProcessIterator {
     dirs: ReadDir,
+}
+
+impl Default for ProcessIterator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProcessIterator {
@@ -126,7 +132,7 @@ impl Iterator for ProcessIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.dirs
             .find_map(|dir| dir.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
-            .and_then(|pid| Some(Process::new(pid as i64)))
+            .map(|pid| Process::new(pid as i64))
     }
 }
 
@@ -153,22 +159,21 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
         loop {
             let line: String = self.lines.next()?.unwrap().trim().to_string();
 
-            let mut range = line.split(" ").nth(0).unwrap().split("-");
+            let mut range = line.split(' ').nth(0).unwrap().split('-');
             let range = usize::from_str_radix(range.next().unwrap(), 16).unwrap()
                 ..usize::from_str_radix(range.next().unwrap(), 16).unwrap();
 
             if range.start >= self.starting_address {
-                let permission = match &line.split(" ").nth(1).unwrap()[0..2] {
+                let permission = match &line.split(' ').nth(1).unwrap()[0..2] {
                     "r-" => MemoryPermission::READONLY,
                     "rw" => MemoryPermission::READWRITE,
                     _ => MemoryPermission::NONE,
                 };
 
                 let info = line
-                    .split(" ")
+                    .split(' ')
                     .skip(5)
-                    .skip_while(|s| s.is_empty())
-                    .next()
+                    .find(|s| !s.is_empty())
                     .unwrap_or("");
 
                 let kind = if info.contains("stack") {
@@ -210,10 +215,7 @@ mod tests {
     fn enumerate_processes() {
         assert!(
             ProcessIterator::new()
-                .map(|p| {
-                    println!("{:?}", p);
-                    return p;
-                })
+                .inspect(|p| println!("{:?}", p))
                 .count()
                 > 0
         );
@@ -253,7 +255,7 @@ mod tests {
                     process
                         .read_memory(region.range.start, &mut buffer)
                         .unwrap();
-                    buffer.iter().count();
+                    buffer.len();
                 }
                 _ => {}
             }
