@@ -24,15 +24,10 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "cli"
 version = "0.1.0"
 dependencies = [
- "core",
  "linux",
  "scanner",
  "windows 0.1.0",
 ]
-
-[[package]]
-name = "core"
-version = "0.1.0"
 
 [[package]]
 name = "libc"
@@ -44,7 +39,6 @@ checksum = "5916d2ae698f6de9bfb891ad7a8d65c09d232dc58cc4ac433c7da3b2fd84bc2b"
 name = "linux"
 version = "0.1.0"
 dependencies = [
- "core",
  "nix",
 ]
 
@@ -73,7 +67,6 @@ dependencies = [
 name = "scanner"
 version = "0.1.0"
 dependencies = [
- "core",
  "linux",
  "windows 0.1.0",
 ]

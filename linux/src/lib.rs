@@ -1,8 +1,7 @@
-use core::{MemoryKind, MemoryPermission, MemoryRegion, ProcessTrait};
-
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
+use std::ops::Range;
 use std::path::PathBuf;
 
 use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
@@ -14,26 +13,26 @@ pub struct Process {
     pid: i64,
 }
 
-impl ProcessTrait for Process {
-    fn new(pid: i64) -> Self {
+impl Process {
+    pub fn new(pid: i64) -> Self {
         Self {
             proc_path: ["/proc", &pid.to_string()].iter().collect(),
             pid,
         }
     }
 
-    fn pid(&self) -> i64 {
+    pub fn pid(&self) -> i64 {
         self.pid as i64
     }
 
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
         fs::read_to_string(self.proc_path.join("comm"))
             .unwrap()
             .trim()
             .to_string()
     }
 
-    fn attach(&self) -> Result<(), String> {
+    pub fn attach(&self) -> Result<(), String> {
         use nix::{sys::ptrace, unistd::Pid};
 
         let pid = Pid::from_raw(self.pid() as i32);
@@ -47,7 +46,7 @@ impl ProcessTrait for Process {
         }
     }
 
-    fn detach(&self) -> Result<(), String> {
+    pub fn detach(&self) -> Result<(), String> {
         use nix::{
             sys::{ptrace, signal::Signal},
             unistd::Pid,
@@ -65,7 +64,7 @@ impl ProcessTrait for Process {
         }
     }
 
-    fn read_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
+    pub fn read_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -85,7 +84,7 @@ impl ProcessTrait for Process {
         }
     }
 
-    fn write_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), String> {
+    pub fn write_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -134,6 +133,24 @@ impl Iterator for ProcessIterator {
             .find_map(|dir| dir.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
             .map(|pid| Process::new(pid as i64))
     }
+}
+
+pub enum MemoryPermission {
+    READONLY,
+    READWRITE,
+    NONE,
+}
+
+pub enum MemoryKind {
+    STACK,
+    HEAP,
+    UNKNOWN,
+}
+
+pub struct MemoryRegion {
+    pub range: Range<usize>,
+    pub permission: MemoryPermission,
+    pub kind: MemoryKind,
 }
 
 pub struct MemoryRegionIterator<'a> {
@@ -201,7 +218,6 @@ mod tests {
     use std::process::{Child, Command, Stdio};
 
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
-    use core::ProcessTrait;
 
     fn create_child() -> Child {
         Command::new("/usr/bin/sleep")

@@ -3,8 +3,6 @@ use std::{
     process::Command,
 };
 
-use core::ProcessTrait;
-
 #[cfg(target_os = "linux")]
 use linux::Process;
 #[cfg(target_os = "windows")]

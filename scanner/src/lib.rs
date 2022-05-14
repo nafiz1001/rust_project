@@ -1,7 +1,5 @@
 use std::mem::size_of;
 
-use core::ProcessTrait;
-
 #[cfg(target_os = "linux")]
 use linux::{MemoryRegionIterator, Process};
 #[cfg(target_os = "windows")]
