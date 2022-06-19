@@ -39,10 +39,10 @@ impl Process {
 
         ptrace::attach(pid).map_err(|op| op.desc().to_string())?;
 
-        // TODO: properly waitpid
         match waitpid(pid, Some(WaitPidFlag::WSTOPPED)) {
-            Ok(WaitStatus::Stopped(_, _) | WaitStatus::PtraceEvent(_, _, _)) => Ok(()),
-            _ => Err("waitpid returned unexpected value".to_string()),
+            Ok(WaitStatus::Stopped(_, _)) => Ok(()),
+            Ok(x) => Err(format!("waitpid returned {:?}", x)),
+            Err(x) => Err(format!("waitpid returned {:?}", x)),
         }
     }
 
@@ -52,16 +52,16 @@ impl Process {
             unistd::Pid,
         };
 
-        let pid = Pid::from_raw(self.pid() as i32);
-
         ptrace::detach(Pid::from_raw(self.pid() as i32), Signal::SIGCONT)
             .map_err(|op| op.desc().to_string())?;
 
         // TODO: properly waitpid
-        match waitpid(pid, Some(WaitPidFlag::WCONTINUED)) {
-            Ok(WaitStatus::Continued(_)) => Ok(()),
-            _ => Err("waitpid returned expected value".to_string()),
-        }
+        // match waitpid(pid, Some(WaitPidFlag::WCONTINUED)) {
+        //     Ok(WaitStatus::Continued(_)) => Ok(()),
+        //     Ok(x) => Err(format!("waitpid returned {:?}", x)),
+        //     Err(x) => Err(format!("waitpid returned {:?}", x)),
+        // }
+        return Ok(())
     }
 
     pub fn read_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
@@ -221,6 +221,7 @@ mod tests {
 
     fn create_child() -> Child {
         Command::new("/usr/bin/sleep")
+            .arg("10000")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -242,6 +243,18 @@ mod tests {
         let mut child = create_child();
 
         Process::new(child.id() as i64);
+
+        child.kill().unwrap();
+    }
+
+    #[test]
+    fn attach_detach_process() {
+        let mut child = create_child();
+
+        let process = Process::new(child.id() as i64);
+
+        process.attach().unwrap();
+        process.detach().unwrap();
 
         child.kill().unwrap();
     }
