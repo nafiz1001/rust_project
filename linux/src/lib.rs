@@ -220,7 +220,8 @@ mod tests {
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
 
     fn create_child() -> Child {
-        Command::new("/usr/bin/sleep")
+        Command::new("/usr/bin/env")
+            .arg("sleep")
             .arg("10000")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
