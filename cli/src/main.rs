@@ -1,6 +1,6 @@
 use std::{
     io::{self, BufRead, Write},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 #[cfg(target_os = "linux")]
@@ -18,7 +18,12 @@ fn cli() {
     stdin.read_line(&mut buf).unwrap();
 
     let path = buf.trim();
-    let child = Command::new(path).spawn().unwrap();
+    let child = Command::new(path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
     let process = Process::new(child.id() as i64);
 
     let mut scanner = Scanner::new(&process);
