@@ -4,7 +4,7 @@ use std::{
 };
 
 #[cfg(target_os = "linux")]
-use linux::{Process, MemoryRegionIterator};
+use linux::{MemoryRegionIterator, Process};
 #[cfg(target_os = "windows")]
 use windows::Process;
 

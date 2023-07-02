@@ -1,7 +1,10 @@
-use core::{Process, MemoryRegionIterator};
+use core::{MemoryRegionIterator, Process};
 use std::mem::size_of;
 
-pub struct Scanner<'a, P> where P: Process {
+pub struct Scanner<'a, P>
+where
+    P: Process,
+{
     process: &'a P,
     addresses: Vec<usize>,
 }
@@ -18,7 +21,10 @@ impl<'a, P: Process> Scanner<'a, P> {
         &self.addresses[..]
     }
 
-    pub fn new_scan<T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(&mut self, mut predicate: F) {
+    pub fn new_scan<T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(
+        &mut self,
+        mut predicate: F,
+    ) {
         self.addresses.clear();
 
         for region in M::new(self.process, 0, usize::MAX) {
@@ -52,9 +58,7 @@ impl<'a, P: Process> Scanner<'a, P> {
             .iter()
             .filter_map(|&address| {
                 let mut buffer = vec![0u8; size_of::<T>()];
-                self.process
-                    .read_memory_slice(address, &mut buffer)
-                    .ok()?;
+                self.process.read_memory_slice(address, &mut buffer).ok()?;
 
                 unsafe {
                     let actual = std::slice::from_raw_parts(buffer.as_ptr() as *const T, 1);

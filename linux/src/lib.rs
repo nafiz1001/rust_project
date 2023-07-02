@@ -1,4 +1,7 @@
-use core::{MemoryRegion, PID, MemoryPermission, MemoryKind, Process as CoreProcess, ProcessIterator as CoreProcessIterator, MemoryRegionIterator as CoreMemoryRegionIterator};
+use core::{
+    MemoryKind, MemoryPermission, MemoryRegion, MemoryRegionIterator as CoreMemoryRegionIterator,
+    Process as CoreProcess, ProcessIterator as CoreProcessIterator, PID,
+};
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
@@ -61,15 +64,12 @@ impl CoreProcess for Process {
         //     Ok(x) => Err(format!("waitpid returned {:?}", x)),
         //     Err(x) => Err(format!("waitpid returned {:?}", x)),
         // }
-        return Ok(())
+        return Ok(());
     }
 
-    fn read_memory<T>(&self, offset: usize,  buffer: *mut T) -> Result<(), String> {
+    fn read_memory<T>(&self, offset: usize, buffer: *mut T) -> Result<(), String> {
         unsafe {
-            let mut buffer_slice = std::slice::from_raw_parts_mut(
-                buffer,
-                size_of::<T>(),
-            );
+            let mut buffer_slice = std::slice::from_raw_parts_mut(buffer, size_of::<T>());
 
             return self.read_memory_slice(offset, &mut buffer_slice);
         }
@@ -97,10 +97,7 @@ impl CoreProcess for Process {
 
     fn write_memory<T>(&self, offset: usize, buffer: *const T) -> Result<(), String> {
         unsafe {
-            let buffer_slice = std::slice::from_raw_parts(
-                buffer,
-                size_of::<T>(),
-            );
+            let buffer_slice = std::slice::from_raw_parts(buffer, size_of::<T>());
 
             return self.write_memory_slice(offset, buffer_slice);
         }
@@ -217,7 +214,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     kind,
                 });
             } else if range.start - self.offset >= self.limit {
-                return None
+                return None;
             }
         }
     }
@@ -225,9 +222,9 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Child, Command, Stdio};
+    use crate::{CoreMemoryRegionIterator, CoreProcess};
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
-    use crate::{CoreProcess, CoreMemoryRegionIterator};
+    use std::process::{Child, Command, Stdio};
 
     fn create_child() -> Child {
         Command::new("/usr/bin/env")
