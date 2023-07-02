@@ -12,4 +12,5 @@ windows = { path = "../windows" }
 linux = { path = "../linux" }
 
 [dependencies]
+core = { path = "../core" }
 scanner = { path = "../scanner" }

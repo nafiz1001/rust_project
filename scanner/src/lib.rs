@@ -1,17 +1,13 @@
+use core::{Process, MemoryRegionIterator};
 use std::mem::size_of;
 
-#[cfg(target_os = "linux")]
-use linux::{MemoryRegionIterator, Process};
-#[cfg(target_os = "windows")]
-use windows::{MemoryRegionIterator, Process};
-
-pub struct Scanner<'a> {
-    process: &'a Process,
+pub struct Scanner<'a, P> where P: Process {
+    process: &'a P,
     addresses: Vec<usize>,
 }
 
-impl<'a> Scanner<'a> {
-    pub fn new(process: &'a Process) -> Self {
+impl<'a, P: Process> Scanner<'a, P> {
+    pub fn new(process: &'a P) -> Self {
         Self {
             process,
             addresses: Vec::new(),
@@ -22,14 +18,14 @@ impl<'a> Scanner<'a> {
         &self.addresses[..]
     }
 
-    pub fn new_scan<T: PartialEq, P: FnMut(&T) -> bool>(&mut self, mut predicate: P) {
+    pub fn new_scan<T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(&mut self, mut predicate: F) {
         self.addresses.clear();
 
-        for region in MemoryRegionIterator::new(self.process, 0) {
+        for region in M::new(self.process, 0, usize::MAX) {
             let mut region_buffer = vec![0u8; region.range.len()];
             match self
                 .process
-                .read_memory(region.range.start, &mut region_buffer)
+                .read_memory_slice(region.range.start, &mut region_buffer)
             {
                 Ok(_) => {}
                 Err(_) => continue,
@@ -50,14 +46,14 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn next_scan<T: PartialEq, P: FnMut(&T) -> bool>(&mut self, mut predicate: P) {
+    pub fn next_scan<T: PartialEq, F: FnMut(&T) -> bool>(&mut self, mut predicate: F) {
         self.addresses = self
             .addresses
             .iter()
             .filter_map(|&address| {
                 let mut buffer = vec![0u8; size_of::<T>()];
                 self.process
-                    .read_memory(address, &mut buffer)
+                    .read_memory_slice(address, &mut buffer)
                     .ok()?;
 
                 unsafe {

@@ -4,7 +4,7 @@ use std::{
 };
 
 #[cfg(target_os = "linux")]
-use linux::Process;
+use linux::{Process, MemoryRegionIterator};
 #[cfg(target_os = "windows")]
 use windows::Process;
 
@@ -24,7 +24,7 @@ fn cli() {
         .stdin(Stdio::null())
         .spawn()
         .unwrap();
-    let process = Process::new(child.id() as i64);
+    let process = <Process as core::Process>::new(child.id() as i64);
 
     let mut scanner = Scanner::new(&process);
 
@@ -40,7 +40,7 @@ fn cli() {
                     .ok_or("new_scan [int]".to_string())?
                     .parse::<i32>()
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
-                scanner.new_scan(|&actual| expected == actual);
+                scanner.new_scan::<i32, _, MemoryRegionIterator>(|&actual| expected == actual);
                 Ok("Scan done!".to_string())
             }
             "next_scan" => {
@@ -56,7 +56,7 @@ fn cli() {
             "result_scan" => {
                 for &address in scanner.get_addresses().iter() {
                     let mut value = [0];
-                    let value = match process.read_memory(address, &mut value) {
+                    let value = match core::Process::read_memory(&process, address, &mut value) {
                         Ok(_) => value[0],
                         Err(_) => continue,
                     };
@@ -81,7 +81,7 @@ fn cli() {
                     .or(Err("int argument could not be parsed as 32 bit int".to_string()))?;
                 let value = [value];
 
-                match  process.write_memory(address, &value) {
+                match  core::Process::write_memory(&process, address, &value) {
                     Ok(_) => Ok(format!("wrote {} at address {:#08x}", value[0], address)),
                     Err(_) => Err(format!("could not write to {:#08x}", address)),
                 }
@@ -96,7 +96,7 @@ fn cli() {
                     .or(Err("address argument could not be parsed as hexadecimal int"))?;
 
                 let mut value = [0];
-                match  process.read_memory(address, &mut value) {
+                match  core::Process::read_memory(&process, address, &mut value) {
                     Ok(_) => Ok(value[0].to_string()),
                     Err(_) => Err(format!("could not read at {:#08x}", address)),
                 }

@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 # libc = "0.2"
 nix = { version = "0.24" }
+core = { path = "../core" }

@@ -1,7 +1,7 @@
+use core::{MemoryRegion, PID, MemoryPermission, MemoryKind, Process as CoreProcess, ProcessIterator as CoreProcessIterator, MemoryRegionIterator as CoreMemoryRegionIterator};
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
-use std::ops::Range;
 use std::path::PathBuf;
 
 use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
@@ -10,29 +10,29 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 #[derive(Debug)]
 pub struct Process {
     proc_path: PathBuf,
-    pid: i64,
+    pid: PID,
 }
 
-impl Process {
-    pub fn new(pid: i64) -> Self {
+impl CoreProcess for Process {
+    fn new(pid: PID) -> Self {
         Self {
             proc_path: ["/proc", &pid.to_string()].iter().collect(),
             pid,
         }
     }
 
-    pub fn pid(&self) -> i64 {
-        self.pid as i64
+    fn pid(&self) -> PID {
+        self.pid as PID
     }
 
-    pub fn name(&self) -> String {
+    fn name(&self) -> String {
         fs::read_to_string(self.proc_path.join("comm"))
             .unwrap()
             .trim()
             .to_string()
     }
 
-    pub fn attach(&self) -> Result<(), String> {
+    fn attach(&self) -> Result<(), String> {
         use nix::{sys::ptrace, unistd::Pid};
 
         let pid = Pid::from_raw(self.pid() as i32);
@@ -46,7 +46,7 @@ impl Process {
         }
     }
 
-    pub fn detach(&self) -> Result<(), String> {
+    fn detach(&self) -> Result<(), String> {
         use nix::{
             sys::{ptrace, signal::Signal},
             unistd::Pid,
@@ -64,7 +64,18 @@ impl Process {
         return Ok(())
     }
 
-    pub fn read_memory<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
+    fn read_memory<T>(&self, offset: usize,  buffer: *mut T) -> Result<(), String> {
+        unsafe {
+            let mut buffer_slice = std::slice::from_raw_parts_mut(
+                buffer,
+                size_of::<T>(),
+            );
+
+            return self.read_memory_slice(offset, &mut buffer_slice);
+        }
+    }
+
+    fn read_memory_slice<T>(&self, start: usize, buffer: &mut [T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -84,7 +95,18 @@ impl Process {
         }
     }
 
-    pub fn write_memory<T>(&self, start: usize, buffer: &[T]) -> Result<(), String> {
+    fn write_memory<T>(&self, offset: usize, buffer: *const T) -> Result<(), String> {
+        unsafe {
+            let buffer_slice = std::slice::from_raw_parts(
+                buffer,
+                size_of::<T>(),
+            );
+
+            return self.write_memory_slice(offset, buffer_slice);
+        }
+    }
+
+    fn write_memory_slice<T>(&self, start: usize, buffer: &[T]) -> Result<(), String> {
         use nix::unistd::Pid;
 
         unsafe {
@@ -125,6 +147,8 @@ impl ProcessIterator {
     }
 }
 
+impl CoreProcessIterator<Process> for ProcessIterator {}
+
 impl Iterator for ProcessIterator {
     type Item = Process;
 
@@ -135,35 +159,19 @@ impl Iterator for ProcessIterator {
     }
 }
 
-pub enum MemoryPermission {
-    READONLY,
-    READWRITE,
-    NONE,
-}
-
-pub enum MemoryKind {
-    STACK,
-    HEAP,
-    UNKNOWN,
-}
-
-pub struct MemoryRegion {
-    pub range: Range<usize>,
-    pub permission: MemoryPermission,
-    pub kind: MemoryKind,
-}
-
 pub struct MemoryRegionIterator<'a> {
     lines: std::io::Lines<BufReader<File>>,
-    starting_address: usize,
+    offset: usize,
+    limit: usize,
     process: &'a Process,
 }
 
-impl<'a> MemoryRegionIterator<'a> {
-    pub fn new(process: &'a Process, starting_address: usize) -> Self {
+impl<'a> CoreMemoryRegionIterator<'a, Process> for MemoryRegionIterator<'a> {
+    fn new(process: &'a Process, offset: usize, limit: usize) -> Self {
         Self {
             lines: BufReader::new(File::open(process.proc_path.join("maps")).unwrap()).lines(),
-            starting_address,
+            offset,
+            limit,
             process,
         }
     }
@@ -180,7 +188,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
             let range = usize::from_str_radix(range.next().unwrap(), 16).unwrap()
                 ..usize::from_str_radix(range.next().unwrap(), 16).unwrap();
 
-            if range.start >= self.starting_address {
+            if range.start >= self.offset {
                 let permission = match &line.split(' ').nth(1).unwrap()[0..2] {
                     "r-" => MemoryPermission::READONLY,
                     "rw" => MemoryPermission::READWRITE,
@@ -208,6 +216,8 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     permission,
                     kind,
                 });
+            } else if range.start - self.offset >= self.limit {
+                return None
             }
         }
     }
@@ -216,8 +226,8 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
 #[cfg(test)]
 mod tests {
     use std::process::{Child, Command, Stdio};
-
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
+    use crate::{CoreProcess, CoreMemoryRegionIterator};
 
     fn create_child() -> Child {
         Command::new("/usr/bin/env")
@@ -266,7 +276,7 @@ mod tests {
 
         let process = Process::new(child.id() as i64);
 
-        for _ in MemoryRegionIterator::new(&process, 0) {}
+        for _ in MemoryRegionIterator::new(&process, 0, usize::MAX) {}
 
         child.kill().unwrap();
     }
@@ -278,12 +288,12 @@ mod tests {
         let process = Process::new(child.id() as i64);
 
         // process.attach().unwrap();
-        for region in MemoryRegionIterator::new(&process, 0) {
+        for region in MemoryRegionIterator::new(&process, 0, usize::MAX) {
             match region.permission {
                 MemoryPermission::READONLY | MemoryPermission::READWRITE => {
                     let mut buffer = vec![0u8; region.range.len()];
                     process
-                        .read_memory(region.range.start, &mut buffer)
+                        .read_memory_slice(region.range.start, &mut buffer)
                         .unwrap();
                     buffer.len();
                 }
