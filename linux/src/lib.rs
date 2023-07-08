@@ -1,7 +1,5 @@
-use core::{
-    MemoryKind, MemoryPermission, MemoryRegion, MemoryRegionIterator as CoreMemoryRegionIterator,
-    Process as CoreProcess, ProcessIterator as CoreProcessIterator, PID,
-};
+use core;
+use core::{MemoryKind, MemoryPermission, MemoryRegion, PID};
 use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
@@ -16,7 +14,7 @@ pub struct Process {
     pid: PID,
 }
 
-impl CoreProcess for Process {
+impl core::Process for Process {
     fn new(pid: PID) -> Self {
         Self {
             proc_path: ["/proc", &pid.to_string()].iter().collect(),
@@ -144,7 +142,7 @@ impl ProcessIterator {
     }
 }
 
-impl CoreProcessIterator<Process> for ProcessIterator {}
+impl core::ProcessIterator<Process> for ProcessIterator {}
 
 impl Iterator for ProcessIterator {
     type Item = Process;
@@ -152,7 +150,7 @@ impl Iterator for ProcessIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.dirs
             .find_map(|dir| dir.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
-            .map(|pid| Process::new(pid as i64))
+            .map(|pid| <Process as core::Process>::new(pid as i64))
     }
 }
 
@@ -163,7 +161,7 @@ pub struct MemoryRegionIterator<'a> {
     process: &'a Process,
 }
 
-impl<'a> CoreMemoryRegionIterator<'a, Process> for MemoryRegionIterator<'a> {
+impl<'a> core::MemoryRegionIterator<'a, Process> for MemoryRegionIterator<'a> {
     fn new(process: &'a Process, offset: usize, limit: usize) -> Self {
         Self {
             lines: BufReader::new(File::open(process.proc_path.join("maps")).unwrap()).lines(),
@@ -202,7 +200,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     MemoryKind::STACK
                 } else if info.contains("heap") {
                     MemoryKind::HEAP
-                } else if info.contains(self.process.name().as_str()) {
+                } else if info.contains(core::Process::name(self.process).as_str()) {
                     MemoryKind::UNKNOWN
                 } else {
                     continue;
@@ -222,7 +220,6 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CoreMemoryRegionIterator, CoreProcess};
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
     use std::process::{Child, Command, Stdio};
 
@@ -250,7 +247,7 @@ mod tests {
     fn new_process() {
         let mut child = create_child();
 
-        Process::new(child.id() as i64);
+        <Process as core::Process>::new(child.id() as i64);
 
         child.kill().unwrap();
     }
@@ -259,10 +256,10 @@ mod tests {
     fn attach_detach_process() {
         let mut child = create_child();
 
-        let process = Process::new(child.id() as i64);
+        let process = <Process as core::Process>::new(child.id() as i64);
 
-        process.attach().unwrap();
-        process.detach().unwrap();
+        core::Process::attach(&process).unwrap();
+        core::Process::detach(&process).unwrap();
 
         child.kill().unwrap();
     }
@@ -271,9 +268,13 @@ mod tests {
     fn memory_region_iterator() {
         let mut child = create_child();
 
-        let process = Process::new(child.id() as i64);
+        let process = <Process as core::Process>::new(child.id() as i64);
 
-        for _ in MemoryRegionIterator::new(&process, 0, usize::MAX) {}
+        for _ in <MemoryRegionIterator as core::MemoryRegionIterator<Process>>::new(
+            &process,
+            0,
+            usize::MAX,
+        ) {}
 
         child.kill().unwrap();
     }
@@ -282,15 +283,18 @@ mod tests {
     fn read_process_memory() {
         let mut child = create_child();
 
-        let process = Process::new(child.id() as i64);
+        let process = <Process as core::Process>::new(child.id() as i64);
 
         // process.attach().unwrap();
-        for region in MemoryRegionIterator::new(&process, 0, usize::MAX) {
+        for region in <MemoryRegionIterator as core::MemoryRegionIterator<Process>>::new(
+            &process,
+            0,
+            usize::MAX,
+        ) {
             match region.permission {
                 MemoryPermission::READONLY | MemoryPermission::READWRITE => {
                     let mut buffer = vec![0u8; region.range.len()];
-                    process
-                        .read_memory_slice(region.range.start, &mut buffer)
+                    core::Process::read_memory_slice(&process, region.range.start, &mut buffer)
                         .unwrap();
                     buffer.len();
                 }
