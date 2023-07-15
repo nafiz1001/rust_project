@@ -1,16 +1,16 @@
 use core::{MemoryRegionIterator, Process};
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
-pub struct Scanner<'a, P>
+pub struct Scanner<P>
 where
     P: Process,
 {
-    process: &'a P,
+    process: Arc<P>,
     addresses: Vec<usize>,
 }
 
-impl<'a, P: Process> Scanner<'a, P> {
-    pub fn new(process: &'a P) -> Self {
+impl<P: Process> Scanner<P> {
+    pub fn new(process: Arc<P>) -> Self {
         Self {
             process,
             addresses: Vec::new(),
@@ -21,13 +21,13 @@ impl<'a, P: Process> Scanner<'a, P> {
         &self.addresses[..]
     }
 
-    pub fn new_scan<T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(
-        &mut self,
+    pub fn new_scan<'a, T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(
+        &'a mut self,
         mut predicate: F,
     ) {
         self.addresses.clear();
 
-        for region in M::new(self.process, 0, usize::MAX) {
+        for region in M::new(self.process.as_ref(), 0, usize::MAX) {
             let mut region_buffer = vec![0u8; region.range.len()];
             match self
                 .process

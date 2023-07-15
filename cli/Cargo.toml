@@ -14,3 +14,6 @@ linux = { path = "../linux" }
 [dependencies]
 core = { path = "../core" }
 scanner = { path = "../scanner" }
+jsonrpsee = { version = "0.18.2", features = ["server-core"] }
+tokio = { version = "1.29.1", features = ["rt"] }
+serde = { version = "1.0.171", features = ["derive"] }
