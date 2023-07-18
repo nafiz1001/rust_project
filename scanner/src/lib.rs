@@ -7,6 +7,7 @@ where
 {
     process: Arc<P>,
     addresses: Vec<usize>,
+    value_size: usize,
 }
 
 impl<P: Process> Scanner<P> {
@@ -14,6 +15,7 @@ impl<P: Process> Scanner<P> {
         Self {
             process,
             addresses: Vec::new(),
+            value_size: 0,
         }
     }
 
@@ -26,6 +28,7 @@ impl<P: Process> Scanner<P> {
         mut predicate: F,
     ) {
         self.addresses.clear();
+        self.value_size = size_of::<T>();
 
         for region in M::new(self.process.as_ref(), 0, usize::MAX) {
             let mut region_buffer = vec![0u8; region.range.len()];
@@ -53,6 +56,8 @@ impl<P: Process> Scanner<P> {
     }
 
     pub fn next_scan<T: PartialEq, F: FnMut(&T) -> bool>(&mut self, mut predicate: F) {
+        assert!(size_of::<T>() <= self.value_size);
+
         self.addresses = self
             .addresses
             .iter()
