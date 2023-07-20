@@ -1,5 +1,5 @@
 use core::{MemoryRegionIterator, Process};
-use std::{mem::size_of, sync::Arc};
+use std::{marker::PhantomData, mem::size_of, slice::Iter, sync::Arc};
 
 pub struct Scanner<P>
 where
@@ -76,5 +76,52 @@ impl<P: Process> Scanner<P> {
                 }
             })
             .collect();
+    }
+
+    pub fn scan_result<'a, T: Copy>(&'a self) -> ScanResult<'a, P, T> {
+        ScanResult::new(self)
+    }
+}
+
+pub struct ScanResult<'a, P, T>
+where
+    P: Process,
+    T: Copy,
+{
+    scanner: &'a Scanner<P>,
+    addresses_iter: Iter<'a, usize>,
+    bytes: Vec<u8>,
+    phantom: PhantomData<&'a T>,
+}
+
+impl<'a, P, T> ScanResult<'a, P, T>
+where
+    P: Process,
+    T: Copy,
+{
+    pub fn new(scanner: &'a Scanner<P>) -> Self {
+        assert!(size_of::<T>() > scanner.value_size);
+        Self {
+            scanner,
+            addresses_iter: scanner.get_addresses().iter(),
+            phantom: PhantomData,
+            bytes: vec![0u8; size_of::<T>()],
+        }
+    }
+}
+
+impl<'a, P, T> Iterator for ScanResult<'a, P, T>
+where
+    P: Process,
+    T: Copy,
+{
+    type Item = (usize, T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.addresses_iter.next()?;
+        self.scanner.process
+            .read_memory_slice(*next, self.bytes.as_mut_slice())
+            .unwrap();
+        unsafe { Some((*next, *(self.bytes.as_ptr() as *const T))) }
     }
 }
