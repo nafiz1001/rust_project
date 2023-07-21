@@ -78,8 +78,9 @@ impl<P: Process> Scanner<P> {
             .collect();
     }
 
-    pub fn scan_result<'a, T: Copy>(&'a self) -> ScanResult<'a, P, T> {
-        ScanResult::new(self)
+    pub fn scan_result<'a, T: Copy>(&'a self, offset: usize, limit: usize) -> ScanResult<'a, P, T> {
+        assert!(size_of::<T>() <= self.value_size);
+        ScanResult::new(self.process.as_ref(), &self.addresses[offset..(offset+limit)])
     }
 }
 
@@ -88,7 +89,7 @@ where
     P: Process,
     T: Copy,
 {
-    scanner: &'a Scanner<P>,
+    process: &'a P,
     addresses_iter: Iter<'a, usize>,
     bytes: Vec<u8>,
     phantom: PhantomData<&'a T>,
@@ -99,11 +100,10 @@ where
     P: Process,
     T: Copy,
 {
-    pub fn new(scanner: &'a Scanner<P>) -> Self {
-        assert!(size_of::<T>() > scanner.value_size);
+    pub fn new(process: &'a P, addresses: &'a [usize]) -> Self {
         Self {
-            scanner,
-            addresses_iter: scanner.get_addresses().iter(),
+            process,
+            addresses_iter: addresses.iter(),
             phantom: PhantomData,
             bytes: vec![0u8; size_of::<T>()],
         }
@@ -119,7 +119,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.addresses_iter.next()?;
-        self.scanner.process
+        self.process
             .read_memory_slice(*next, self.bytes.as_mut_slice())
             .unwrap();
         unsafe { Some((*next, *(self.bytes.as_ptr() as *const T))) }
