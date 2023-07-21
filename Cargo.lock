@@ -110,6 +110,7 @@ dependencies = [
  "linux",
  "scanner",
  "serde",
+ "serde_json",
  "tokio",
  "windows 0.1.0",
 ]
