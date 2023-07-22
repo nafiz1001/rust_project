@@ -4,6 +4,7 @@ use std::fs::{self, File, ReadDir};
 use std::io::{BufRead, BufReader, IoSlice, IoSliceMut};
 use std::mem::size_of;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use nix::sys::uio::{process_vm_readv, process_vm_writev, RemoteIoVec};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
@@ -154,15 +155,15 @@ impl Iterator for ProcessIterator {
     }
 }
 
-pub struct MemoryRegionIterator<'a> {
+pub struct MemoryRegionIterator {
     lines: std::io::Lines<BufReader<File>>,
     offset: usize,
     limit: usize,
-    process: &'a Process,
+    process: Arc<Process>,
 }
 
-impl<'a> core::MemoryRegionIterator<'a, Process> for MemoryRegionIterator<'a> {
-    fn new(process: &'a Process, offset: usize, limit: usize) -> Self {
+impl core::MemoryRegionIterator<Process> for MemoryRegionIterator {
+    fn new(process: Arc<Process>, offset: usize, limit: usize) -> Self {
         Self {
             lines: BufReader::new(File::open(process.proc_path.join("maps")).unwrap()).lines(),
             offset,
@@ -172,7 +173,7 @@ impl<'a> core::MemoryRegionIterator<'a, Process> for MemoryRegionIterator<'a> {
     }
 }
 
-impl<'a> Iterator for MemoryRegionIterator<'a> {
+impl Iterator for MemoryRegionIterator {
     type Item = MemoryRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -200,7 +201,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
                     MemoryKind::STACK
                 } else if info.contains("heap") {
                     MemoryKind::HEAP
-                } else if info.contains(core::Process::name(self.process).as_str()) {
+                } else if info.contains(core::Process::name(self.process.as_ref()).as_str()) {
                     MemoryKind::UNKNOWN
                 } else {
                     continue;
@@ -221,7 +222,7 @@ impl<'a> Iterator for MemoryRegionIterator<'a> {
 #[cfg(test)]
 mod tests {
     use crate::{MemoryPermission, MemoryRegionIterator, Process, ProcessIterator};
-    use std::process::{Child, Command, Stdio};
+    use std::{process::{Child, Command, Stdio}, sync::Arc};
 
     fn create_child() -> Child {
         Command::new("/usr/bin/env")
@@ -268,10 +269,10 @@ mod tests {
     fn memory_region_iterator() {
         let mut child = create_child();
 
-        let process = <Process as core::Process>::new(child.id() as i64);
+        let process = Arc::new(<Process as core::Process>::new(child.id() as i64));
 
         for _ in <MemoryRegionIterator as core::MemoryRegionIterator<Process>>::new(
-            &process,
+            process,
             0,
             usize::MAX,
         ) {}
@@ -283,18 +284,18 @@ mod tests {
     fn read_process_memory() {
         let mut child = create_child();
 
-        let process = <Process as core::Process>::new(child.id() as i64);
+        let process = Arc::new(<Process as core::Process>::new(child.id() as i64));
 
         // process.attach().unwrap();
         for region in <MemoryRegionIterator as core::MemoryRegionIterator<Process>>::new(
-            &process,
+            process.clone(),
             0,
             usize::MAX,
         ) {
             match region.permission {
                 MemoryPermission::READONLY | MemoryPermission::READWRITE => {
                     let mut buffer = vec![0u8; region.range.len()];
-                    core::Process::read_memory_slice(&process, region.range.start, &mut buffer)
+                    core::Process::read_memory_slice(process.as_ref(), region.range.start, &mut buffer)
                         .unwrap();
                     buffer.len();
                 }

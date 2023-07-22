@@ -6,4 +6,5 @@ members = [
     "linux",
     "scanner",
     "cli",
+    "context",
 ]

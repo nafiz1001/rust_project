@@ -23,14 +23,14 @@ impl<P: Process> Scanner<P> {
         &self.addresses[..]
     }
 
-    pub fn new_scan<'a, T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<'a, P>>(
+    pub fn new_scan<'a, T: PartialEq, F: FnMut(&T) -> bool, M: MemoryRegionIterator<P>>(
         &'a mut self,
         mut predicate: F,
     ) {
         self.addresses.clear();
         self.value_size = size_of::<T>();
 
-        for region in M::new(self.process.as_ref(), 0, usize::MAX) {
+        for region in M::new(self.process.clone(), 0, usize::MAX) {
             let mut region_buffer = vec![0u8; region.range.len()];
             match self
                 .process

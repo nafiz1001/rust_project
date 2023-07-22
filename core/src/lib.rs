@@ -1,4 +1,5 @@
 use core::ops::Range;
+use std::sync::Arc;
 
 pub type PID = i64;
 
@@ -33,11 +34,11 @@ pub trait Process {
     fn write_memory_slice<T>(&self, offset: usize, buffer: &[T]) -> Result<(), String>;
 }
 
-pub trait MemoryRegionIterator<'a, P>: Iterator<Item = MemoryRegion>
+pub trait MemoryRegionIterator<P>: Iterator<Item = MemoryRegion>
 where
     P: Process,
 {
-    fn new(process: &'a P, offset: usize, limit: usize) -> Self;
+    fn new(process: Arc<P>, offset: usize, limit: usize) -> Self;
 }
 
 pub trait ProcessIterator<P>: Iterator<Item = P>
