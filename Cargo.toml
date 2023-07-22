@@ -7,4 +7,5 @@ members = [
     "scanner",
     "cli",
     "context",
+    "jsonrpc",
 ]

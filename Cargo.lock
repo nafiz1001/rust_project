@@ -105,13 +105,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "cli"
 version = "0.1.0"
 dependencies = [
- "context",
- "core",
- "jsonrpsee",
+ "jsonrpc",
  "linux",
- "scanner",
- "serde",
- "serde_json",
  "tokio",
  "windows 0.1.0",
 ]
@@ -125,7 +120,6 @@ dependencies = [
  "scanner",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -197,6 +191,21 @@ name = "itoa"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62b02a5381cc465bd3041d84623d0fa3b66738b52b8e2fc3bab8ad63ab032f4a"
+
+[[package]]
+name = "jsonrpc"
+version = "0.1.0"
+dependencies = [
+ "context",
+ "core",
+ "jsonrpsee",
+ "linux",
+ "scanner",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows 0.1.0",
+]
 
 [[package]]
 name = "jsonrpsee"

@@ -22,7 +22,7 @@ pub struct MemoryRegion {
     pub kind: MemoryKind,
 }
 
-pub trait Process {
+pub trait Process: Send + std::marker::Sync {
     fn new(pid: PID) -> Self;
     fn pid(&self) -> PID;
     fn name(&self) -> String;
@@ -33,6 +33,7 @@ pub trait Process {
     fn write_memory<T>(&self, offset: usize, buffer: *const T) -> Result<(), String>;
     fn write_memory_slice<T>(&self, offset: usize, buffer: &[T]) -> Result<(), String>;
 }
+
 
 pub trait MemoryRegionIterator<P>: Iterator<Item = MemoryRegion>
 where
@@ -45,4 +46,5 @@ pub trait ProcessIterator<P>: Iterator<Item = P>
 where
     P: Process,
 {
+    fn new() -> Self;
 }

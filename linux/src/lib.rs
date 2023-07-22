@@ -131,19 +131,17 @@ pub struct ProcessIterator {
 
 impl Default for ProcessIterator {
     fn default() -> Self {
-        Self::new()
+        core::ProcessIterator::new()
     }
 }
 
-impl ProcessIterator {
-    pub fn new() -> Self {
+impl core::ProcessIterator<Process> for ProcessIterator {
+    fn new() -> Self {
         Self {
             dirs: fs::read_dir("/proc").unwrap(),
         }
     }
 }
-
-impl core::ProcessIterator<Process> for ProcessIterator {}
 
 impl Iterator for ProcessIterator {
     type Item = Process;
@@ -237,7 +235,7 @@ mod tests {
     #[test]
     fn enumerate_processes() {
         assert!(
-            ProcessIterator::new()
+            <ProcessIterator as core::ProcessIterator<Process>>::new()
                 .inspect(|p| println!("{:?}", p))
                 .count()
                 > 0
